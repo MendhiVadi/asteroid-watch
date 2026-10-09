@@ -35,6 +35,7 @@ function Overlays() {
   const error = useStore((s) => s.cinemaError);
   const end = useStore((s) => s.cinemaEnd);
   const stage = useStore((s) => s.cinemaStage);
+  const data = useStore((s) => s.data);
 
   if (phase === "loading")
     return (
@@ -60,15 +61,51 @@ function Overlays() {
         </button>
       </div>
     );
-  if (end === "impact_earth" || end === "impact_moon")
+  if (end === "impact_earth") {
+    const a = data && cine.asteroid >= 0 ? data.list[cine.asteroid] : null;
+    const dM = a ? a.diameter_km * 1000 : NaN;
+    // Simplified, size-only rule of thumb (no density, angle or strength modelling).
+    const outcome = !Number.isFinite(dM)
+      ? "Size unknown: burn-up outcome not estimated."
+      : dM < 10
+        ? "Likely burns up in the atmosphere."
+        : dM <= 100
+          ? "Likely an airburst before reaching the ground."
+          : "Large enough to reach the ground.";
+    return (
+      <>
+        <div className="cine-flash" aria-hidden="true" />
+        <div className="cine-fireball" aria-hidden="true" />
+        <div className="cine-banner cine-banner--impact" role="alert">
+          <p className="cine-title">Impact / burn-up</p>
+          <p className="cine-sub">
+            The asteroid enters Earth&apos;s atmosphere at about {frame.speedKms.toFixed(1)} km/s relative to Earth
+            {Number.isFinite(dM) ? ` (diameter ${dM < 1000 ? `${dM.toFixed(dM < 10 ? 1 : 0)} m` : `${(dM / 1000).toFixed(2)} km`})` : ""}.{" "}
+            {outcome} Playback stopped.
+          </p>
+          <p className="cine-note">
+            Burn-up uses a simplified size-only model: under about 10 m burns up, 10 to 100 m airbursts, larger objects
+            reach the ground. Real outcomes also depend on composition, entry angle and strength.
+          </p>
+          <div className="cine-actions">
+            <button type="button" className="chip" onClick={replay}>
+              Replay
+            </button>
+            <button type="button" className="chip" onClick={exitCinema}>
+              Exit
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
+  if (end === "impact_moon")
     return (
       <>
         <div className="cine-flash" aria-hidden="true" />
         <div className="cine-banner cine-banner--impact" role="alert">
-          <p className="cine-title">{end === "impact_earth" ? "Impact" : "Lunar impact"}</p>
-          <p className="cine-sub">
-            {end === "impact_earth" ? "The asteroid strikes Earth." : "The asteroid strikes the Moon."} Playback stopped.
-          </p>
+          <p className="cine-title">Lunar impact</p>
+          <p className="cine-sub">The asteroid strikes the Moon. Playback stopped.</p>
           <div className="cine-actions">
             <button type="button" className="chip" onClick={replay}>
               Replay

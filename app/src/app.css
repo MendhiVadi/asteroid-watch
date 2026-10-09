@@ -266,6 +266,12 @@ input:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .cine-bar i { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
 .cine-flash { position: absolute; inset: 0; background: radial-gradient(circle, #fff 0%, #ffd9a0 35%, transparent 75%); opacity: 0; animation: flash 1.6s ease-out 1; pointer-events: none; }
 @keyframes flash { 0% { opacity: 0.95; } 100% { opacity: 0; } }
+.cine-fireball { position: absolute; left: 50%; bottom: -18%; width: min(90vw, 760px); aspect-ratio: 1; transform: translateX(-50%); border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgb(255 244 214 / 90%) 0%, rgb(255 170 60 / 75%) 22%, rgb(255 90 30 / 45%) 45%, transparent 70%);
+  filter: blur(6px); mix-blend-mode: screen; animation: fireball 2.4s ease-out 1 both, flicker 0.18s steps(2) 14; }
+@keyframes fireball { 0% { transform: translateX(-50%) scale(0.2); opacity: 0; } 25% { opacity: 1; } 100% { transform: translateX(-50%) scale(1.15); opacity: 0.55; } }
+@keyframes flicker { 0% { filter: blur(6px) brightness(1); } 100% { filter: blur(9px) brightness(1.25); } }
+@media (prefers-reduced-motion: reduce) { .cine-fireball { animation: none; opacity: 0.5; } }
 .chip--accent { background: var(--accent); color: #09231a; border-color: var(--accent); font-weight: 650; }
 .chip--accent:hover { background: #b0f0d1; }
 @media (max-width: 820px) {

@@ -1,0 +1,1040 @@
+==============================================================================================
+ASTEROID WATCH - EXPLANATION
+The math, the simulation, the 3D renders, the UI and the offline "backend", in plain text
+==============================================================================================
+Project folder : C:\Users\medha\Desktop\Hackathons\Aesteroid Detection
+Git remote     : https://github.com/MendhiVadi/asteroid-watch  (local branch main, commit 68b05aa,
+                 plus uncommitted work at the time of writing)
+Written        : 2026-10-09, from the code and data on disk that day (see 0.3 for what was moving)
+Audience       : someone who can read code but has not met orbital mechanics. Terms are explained
+                 where they first appear; section 3.8 is a glossary.
+
+----------------------------------------------------------------------------------------------
+0.1 SUMMARY (10 lines)
+----------------------------------------------------------------------------------------------
+ 1. Browser dashboard: 42,670 known near-Earth asteroids (JPL SBDB, 2026-10-09) orbit a spinning Earth and Moon in 3D.
+ 2. Two tiers: fast two-body Kepler orbits for all objects; accurate N-body (IAS15, 10 bodies + 1PN) for the one you pick.
+ 3. Categories impact / approaching / receding come from two-body screening to 2100-12-31: 12,314 / 20,540 / 9,816.
+ 4. No server, no database: offline Python scripts write static JSON/binary files that the Vite app loads.
+ 5. Earth is JPL Horizons DE441 (2020-2100) in the pipeline and N-body; the dashboard dots use Standish mean elements.
+ 6. Apophis 2029 check: N-body 0.000254102 AU vs Horizons 0.000254091 AU (1.7 km, 0.2 min); two-body gives 0.000138 AU.
+ 7. Display scales are compressed: log around Earth; true scale to 6 Earth radii in cinematic mode; log solar-system view.
+ 8. Stack: React 19, three.js 0.185 (react-three-fiber), zustand, Vite 8, TypeScript 6; Python 3.12 + numpy; Node 24.
+ 9. Observed 2026-10-09: 49/49 N-body tests, 74/74 trajectory tests, validate.py and tsc all pass.
+10. Limits: two-body dates after ~2040 are not forecasts; 97% of diameters are estimates; "impact" means "can", not "will".
+
+----------------------------------------------------------------------------------------------
+0.2 TABLE OF CONTENTS
+----------------------------------------------------------------------------------------------
+0.1  Summary                                              L0000
+0.2  Table of contents                                    L0000
+0.3  How to read this file, and what was still changing   L0000
+PART 1 - THE MATH                                         L0000
+ 1.1  Conventions, frames, constants                      L0000
+ 1.2  Orbital elements                                    L0000
+ 1.3  Mean motion and period                              L0000
+ 1.4  Mean anomaly                                        L0000
+ 1.5  Kepler's equation and the Newton-Raphson solve      L0000
+ 1.6  From the orbit plane to the ecliptic                L0000
+ 1.7  Earth: Standish elements and JPL DE441              L0000
+ 1.8  Geocentric distance, coarse scan, minima refinement L0000
+ 1.9  MOID                                                L0000
+ 1.10 Diameter from absolute magnitude H                  L0000
+ 1.11 Category rules                                      L0000
+ 1.12 N-body equation of motion                           L0000
+ 1.13 Ephemeris tables and Hermite interpolation          L0000
+ 1.14 IAS15 integrator                                    L0000
+ 1.15 Elements to state vector, run start                 L0000
+ 1.16 TDB versus UTC                                      L0000
+ 1.17 Events: close approach, impact, Hill, escape        L0000
+ 1.18 Compressed radial scales for rendering              L0000
+ 1.19 Worked example: Apophis                             L0000
+PART 2 - HOW WE SIMULATED AND RAN THE 3D RENDERS          L0000
+ 2.1  Pipeline end to end                                 L0000
+ 2.2  Step 0: CSV audit                                   L0000
+ 2.3  Step 1: SBDB fetch                                  L0000
+ 2.4  Step 2: id matching, neo_elements.json              L0000
+ 2.5  Step 3: Horizons ephemeris fetch                     L0000
+ 2.6  Step 4: trajectory.py and its outputs               L0000
+ 2.7  Two tiers: screening versus N-body, and why         L0000
+ 2.8  Updating ~42k asteroids every frame                 L0000
+ 2.9  InstancedMesh, colouring, picking                    L0000
+ 2.10 Earth, Moon and Globe (port from Land Dispute)       L0000
+ 2.11 Cinematic mode, step by step                        L0000
+ 2.12 Accuracy limits and caveats                          L0000
+PART 3 - UI AND BACKEND COMPOSITION                       L0000
+ 3.1  Repository layout                                   L0000
+ 3.2  UI components                                       L0000
+ 3.3  State management                                    L0000
+ 3.4  Data files and schemas                               L0000
+ 3.5  The "backend": scripts and how to re-run them        L0000
+ 3.6  Tests                                               L0000
+ 3.7  Build and deploy                                     L0000
+ 3.8  Glossary                                            L0000
+ 3.9  Not verified / open items                            L0000
+
+----------------------------------------------------------------------------------------------
+0.3 HOW TO READ THIS FILE, AND WHAT WAS STILL CHANGING
+----------------------------------------------------------------------------------------------
+- Code is cited as path + function or constant name (line numbers drift: other people were editing
+  app/ and data/ while this was written).
+- "(measured)" means I ran the repo's own tests or code on 2026-10-09 and read the output.
+  "(file)" means read from a data file or report. Anything I could not check is listed in 3.9.
+- Moving parts at the last check: the ephemeris tables had just been extended to 2100-12-31 (Moon
+  grid changed from 2 h to 12 h); scripts/trajectory.py, test_trajectory.py, test_nbody.mts and
+  validate.py were edited; asteroids.json, asteroids_trajectories.json and trajectory_report.md
+  were regenerated; app/dist was rebuilt. Numbers below are from the regenerated files.
+- Formulas use ASCII: sqrt(), ^ for powers, * for multiplication, "Om" = capital omega (longitude of
+  the ascending node), "w" = small omega (argument of perihelion).
+
+==============================================================================================
+PART 1 - THE MATH
+==============================================================================================
+
+1.1 Conventions, frames, constants
+----------------------------------
+Units      length AU (1 AU = 149,597,870.7 km), time day (86,400 s), angles in radians inside the
+           code and in degrees in the data files.
+Frame      ecliptic J2000: x toward the J2000 vernal equinox, z toward ecliptic north, y completes the
+           right-handed set. SBDB elements and the Horizons vectors we request (REF_PLANE=ECLIPTIC,
+           REF_SYSTEM=ICRF) use it. "Heliocentric" = origin at the Sun, "barycentric" = origin at the
+           solar-system barycentre, "geocentric" = origin at Earth's centre.
+Time       Julian Date (JD) = a continuous day count. J2000 = JD 2451545.0. Unix ms -> JD:
+           jd = ms / 86400000 + 2440587.5 (kepler.ts jdFromMs / msFromJd).
+Scene axes three.js is Y-up. Ecliptic (x, y, z) maps to scene (x, z, -y): ecliptic north is scene +Y
+           and the ecliptic plane is the scene XZ plane (kepler.ts offsetToScene and
+           cinemaOffsetToScene; cinematic/ephemeris.ts toWide).
+Constants  k = 0.01720209895 rad/day, the Gaussian gravitational constant (kepler.ts GAUSS_K,
+           trajectory.py K_GAUSS). k^2 equals GM_sun in AU^3/day^2 to 5e-12 relative (measured).
+           2*pi/k = 365.2568983 d. c = 299,792.458 km/s = 173.1446 AU/day (nbody/constants.ts).
+           Earth radius 6371 km = 4.2588e-5 AU; Moon radius 1737.4 km = 1.1614e-5 AU.
+           1 lunar distance (LD) = 0.00256955 AU = 384,399 km (kepler.ts LUNAR_DISTANCE_AU).
+
+1.2 Orbital elements (what the data holds for each asteroid)
+------------------------------------------------------------
+If only the Sun pulled, an orbit would be a fixed ellipse. Six numbers fix it, plus a time stamp:
+    a      semi-major axis, AU: half the long diameter of the ellipse (size)
+    e      eccentricity, 0 <= e < 1: 0 is a circle, near 1 a thin sliver (shape)
+    i      inclination, degrees: tilt of the orbit plane against the ecliptic
+    Om     longitude of the ascending node (JSON key "om"), degrees: where the orbit climbs through
+           the ecliptic, measured from the x axis
+    w      argument of perihelion (key "w"), degrees: angle in the orbit plane from that node to the
+           point closest to the Sun
+    M0     mean anomaly at the epoch (key "ma"), degrees: where the body is on the ellipse at the
+           epoch, as a uniformly growing angle (see 1.4)
+    epoch  JD (TDB) at which the six values are exact (key "epoch"; 30,170 of 42,670 objects use
+           2461200.5 = 2026-06-09, there are 4,340 distinct epochs) (measured)
+Derived: perihelion q = a(1 - e), aphelion Q = a(1 + e), period P (1.3).
+These are OSCULATING elements: the ellipse the body would follow if the Sun were the only attractor
+from the epoch on. Real orbits drift because planets pull too (1.12). SBDB serves them; we ask for
+full double precision because a flyby amplifies small errors (1.19, 2.12).
+
+1.3 Mean motion and period
+--------------------------
+    n = k / a^(3/2)                  [rad/day]       Kepler's third law in Gaussian form
+    P = 2*pi / n = 365.2569 * a^(3/2) [days]
+Code: kepler.ts buildElementTable (slot 2 of each row); trajectory.py asteroid_positions and
+scan_block (n = K_GAUSS / a**1.5); ui/format.ts fmtPeriod (365.256 * a^1.5). The SBDB "per" field
+is NOT used (SBDB rounds it to 3 significant digits). The N-body side uses n = sqrt(mu / |a|^3) with
+mu = GM_sun from the manifest (nbody/elements.ts), the same value to 5e-12.
+
+1.4 Mean anomaly
+----------------
+Mean anomaly is the "clock angle" of the orbit: it grows at the constant rate n although the real
+speed varies (fast near the Sun, slow far away).
+    M(t) = M0 + n * (t - epoch)       radians, then wrapped into [-pi, pi]
+Code: kepler.ts helioPosition (t[b+3] + t[b+2] * (jd - t[b+4])); trajectory.py asteroid_positions.
+Wrapping matters only for precision: over decades M reaches hundreds of radians.
+
+1.5 Kepler's equation and the Newton-Raphson solve
+--------------------------------------------------
+Position needs the eccentric anomaly E (an angle on the circle that encloses the ellipse), tied to M by
+    M = E - e * sin(E)                                   (Kepler's equation)
+E cannot be written in closed form, so we iterate. With f(E) = E - e sin E - M we have
+f'(E) = 1 - e cos E >= 1 - e > 0, never zero for an ellipse. Newton-Raphson:
+    E_{k+1} = E_k - (E_k - e sin E_k - M) / (1 - e cos E_k)
+Near the answer each step roughly squares the error (quadratic convergence).
+Browser, kepler.ts solveKepler:
+    M wrapped to [-pi, pi]
+    start  E_0 = M + e sin M            if e < 0.8     (first-order series, error O(e^2))
+           E_0 = +pi or -pi (sign of M) if e >= 0.8    (safe start for very eccentric orbits)
+    stop when |dE| < 1e-11, at most 30 iterations
+    buildElementTable clamps e to [0, 0.9999] and a to >= 1e-3.
+N-body side, nbody/elements.ts solveKeplerElliptic: same start values, stop at 1e-15, max 60
+iterations. solveKeplerHyperbolic solves M = e sinh H - H for e > 1 (SBDB uses e > 1, a < 0 for
+hyperbolic orbits; the shipped catalogue has none: validate.py checks 0 <= e < 1).
+Python, trajectory.py solve_kepler: Halley's method (third order) instead of Newton:
+    dE = f / (f' - 0.5 * f * f'' / f'),   f'' = e sin E
+    start E_0 = M + 0.85 e sign(sin M) (Danby), tolerance 1e-13, max 60 iterations, vectorised.
+    Tested on 200,000 random cases plus e = 0.999: max residual 4.4e-16 (measured).
+Streaming scan, trajectory.py scan_block: the 5-day grid is regular, so E at the next grid point is
+predicted from the current one by a second-order Taylor step in M,
+    g = n*dt / (1 - e cos E);    E_next ~ E + g - 0.5 * e * sin(E) * g^2 / (1 - e cos E)
+then exactly two Halley corrections (a step > 1e-6 flags a straggler that gets full iteration).
+sin and cos of the corrected E come from a second-order update of the old sin/cos, not new trig
+calls. Test: matches the generic path to 2e-13 AU (measured).
+Typical cost: 3-4 iterations. Apophis in 1.19: step sizes 1.2e-2, 1.2e-5, 1.1e-11, 2e-16.
+
+1.6 From the orbit plane to the ecliptic (rotations by w, i, Om)
+----------------------------------------------------------------
+In the orbit's own plane ("perifocal" frame: x_p toward perihelion, y_p 90 degrees ahead in the
+direction of motion):
+    x_p = a (cos E - e)
+    y_p = b sin E,    b = a sqrt(1 - e^2)                 (semi-minor axis)
+    r   = sqrt(x_p^2 + y_p^2) = a (1 - e cos E)
+and for the N-body starting velocity (nbody/elements.ts elementsToState)
+    vx_p = -a n sin E / (1 - e cos E),    vy_p = b n cos E / (1 - e cos E)
+To reach ecliptic coordinates rotate by w about z, tilt by i about x, rotate by Om about z:
+R = Rz(Om) Rx(i) Rz(w). The first two columns of R are unit vectors P (toward perihelion) and
+Q (90 degrees ahead), computed once per object:
+    P = ( cos w cos Om - sin w sin Om cos i,   cos w sin Om + sin w cos Om cos i,   sin w sin i )
+    Q = (-sin w cos Om - cos w sin Om cos i,  -sin w sin Om + cos w cos Om cos i,   cos w sin i )
+    position = x_p * P + y_p * Q,        velocity = vx_p * P + vy_p * Q
+Code: kepler.ts buildElementTable and helioPosition; trajectory.py orientation_vectors and
+kepler_position; nbody/elements.ts elementsToState. P and Q are orthonormal (tested to 1e-14).
+Packed table row, stride 12 (kepler.ts ELEM_STRIDE): a, e, n, M0 (rad), epoch, b, Px, Py, Pz, Qx, Qy,
+Qz. Per frame and object that leaves one Kepler solve plus a few multiplies.
+
+1.7 Earth: Standish mean elements and JPL DE441
+-----------------------------------------------
+A close approach is about the Earth-asteroid distance, so Earth needs a position too. Sources:
+(a) Standish, "Keplerian Elements for Approximate Positions of the Major Planets", Table 1 (valid
+    1800-2050), Earth-Moon barycentre row, with T = (JD - 2451545.0) / 36525 (Julian centuries):
+        a     = 1.00000261  + 0.00000562 T            AU
+        e     = 0.01671123  - 0.00004392 T
+        I     = -0.00001531 - 0.01294668 T            degrees
+        L     = 100.46457166 + 35999.37244981 T       degrees (mean longitude)
+        varpi = 102.93768193 + 0.32327364 T           degrees (longitude of perihelion)
+        Om    = 0
+    Then w = varpi - Om, M = L - varpi, and 1.5-1.6 give the position. Code: kepler.ts earthHelio
+    (dashboard dots, InfoCard distance, orbit trail); trajectory.py earth_elements and
+    earth_position_standish (fallback); cinematic/ephemeris.ts PLANETS (fallback and orbit lines).
+    It is the barycentre of Earth+Moon, which sits ~4,671 km (3.1e-5 AU) from Earth's centre. Versus
+    DE441 it differs by up to 1.4e-4 AU (~21,000 km) over 2026-2100 (measured, test_trajectory.py).
+(b) JPL Horizons vectors (ephemeris DE441) of the Earth CENTRE minus the Sun, daily with velocities, in
+    app/public/data/ephemeris/planets.bin, cubic-Hermite interpolated (1.13). trajectory.py
+    earth_position uses this wherever the file covers the date (now the whole 2026-10-09..2100-12-31
+    window), else (a). Earth source is recorded in the report and in asteroids_trajectories.json meta.
+(c) nbody/ephemeris.ts serves the same tables to the force model and to the solar-system view.
+
+1.8 Geocentric distance, the coarse scan, and refinement of the minima
+----------------------------------------------------------------------
+With r the asteroid's heliocentric position and R the Earth's,
+    d = |r - R|,        d^2 = |r|^2 + |R|^2 - 2 r.R
+trajectory.py scan_block uses r.R = x_p (P.R) + y_p (Q.R) and |r| = a - a e cos E, so no per-object
+3-vectors are built: 42,670 objects x 5,424 times in 45 s (runtime line of trajectory_report.md).
+Time grid   JD 2461322.5 (2026-10-09) plus multiples of 5 d, plus the end point JD 2488433.5
+            (2100-12-31): 27,111 d, 5,424 samples (make_grid).
+Candidates  every grid local minimum with d < 0.3 AU, the two window-edge samples if they are minima,
+            and each object's global grid minimum.
+Refinement  (refine_candidates) three 21-point grids around each candidate with half-widths 5.0, 0.6,
+            0.06 d (spacings 0.5, 0.06, 0.006 d), each centred on the previous minimum; then the vertex
+            of a parabola through d^2 at three neighbouring points (spacing h = 0.006 d):
+                t* = t_j + (h/2) (y_{j-1} - y_{j+1}) / (y_{j-1} - 2 y_j + y_{j+1}),     y = d^2
+            accepted only if the vertex is interior, curvature positive, |t* - t_j| <= h, and d
+            does not get larger.
+Close approach  a refined minimum with d < 0.05 AU strictly inside the window; minima of one object
+            within 2 d are merged (DEDUPE_DAYS). The first 3 per object ship as next_close_approach;
+            n_close_approaches ships only when there are more than 3.
+Why refine: Apophis' coarse 5-day minimum is 0.00662 AU, the refined one 0.000138 AU (measured).
+Tests: the pipeline's close approaches equal a brute-force 0.5-day scan on 30 low-MOID objects (20
+events, 0 missed, 0 extra), and a synthetic circular orbit (a = 1.03 AU) reproduces the analytic
+conjunction minima to 1e-6 AU and 0.02 d (measured, test_trajectory.py).
+
+1.9 MOID
+--------
+MOID = Minimum Orbit Intersection Distance: the least distance between the asteroid's ellipse and
+Earth's ellipse, ignoring where each body is on its orbit. A tiny MOID makes an impact geometrically
+possible; whether it happens also depends on timing.
+The category rules use SBDB's MOID (key "moid" in neo_elements.json, AU; unknown for 134 objects).
+trajectory.py also has orbit_moid, used only by tests as an independent check:
+    sample both ellipses at 1500 equal steps of eccentric anomaly -> 1500 x 1500 distance matrix ->
+    argmin -> 4 rounds of local 41 x 41 grids over +-2 steps, each round shrinking the step 10x.
+    Earth's ellipse = Standish elements frozen at one date.
+Agreement with SBDB (measured): Bennu 0.00292 vs 0.003223 AU; Apophis 0.000071 vs 0.000108 AU. The
+few-1e-4 AU gaps (frozen Earth ellipse, coarse search) are why the pipeline trusts SBDB's value.
+
+1.10 Diameter from absolute magnitude H
+---------------------------------------
+H is the brightness an asteroid would have at 1 AU from Sun and observer at zero phase angle. A shiny
+surface (high albedo p) is smaller for the same H:
+    D = 1329 / sqrt(p) * 10^(-H/5)          [km]     p = geometric albedo, H = absolute magnitude
+Code: build_elements.py h_to_d and trajectory.py estimate_diameter, both with p = 0.14, used ONLY when
+SBDB has no measured diameter. Fallback chain in build_elements.py: SBDB diameter, else the H formula,
+else the mean of the CSV's est_diameter_min/max, else none (6 objects; trajectory.py then ships 0.05
+km). Source counts (file): SBDB 1,245; H formula 41,419; none 6. So ~97% of the diameters on screen
+are estimates, good to roughly a factor 2.
+Apophis: H = 19.09. With p = 0.14: 3551.9 * 10^(-3.818) = 0.540 km. SBDB's measured albedo is 0.35:
+1329 / sqrt(0.35) * 1.5206e-4 = 0.342 km, matching SBDB's 0.34 km (the shipped value).
+Dashboard marker size (data.ts markerSize), scene units:  size = 0.034 + 0.058 * log10(1 + 100 * D_km),
+e.g. 0.34 km -> 0.1236; 37.7 km (Ganymed, the largest) -> 0.2414.
+
+1.11 Category rules (trajectory.py categorise): exactly one category per object
+------------------------------------------------------------------------------
+Inputs per object: SBDB MOID (AU or unknown); PHA flag (SBDB null counts as false); min_dist = the
+refined global minimum two-body geocentric distance over 2026-10-09..2100-12-31 (AU); and
+    trend_10y  = d(START + 3650 d) - d(START), rounded to 4 decimals (shipped as trend_au_10y and
+                 as the alias trend_au)
+    trend_full = d(2100-12-31) - d(START), shipped for reference only (trend_au_full)
+Thresholds: IMPACT_AU = 0.05 AU (7.48 million km = 19.5 LD), STRICT_AU = 0.001 AU (149,598 km = 0.39 LD).
+    orbit_ok         = (MOID unknown) OR (MOID <= 0.05) OR PHA
+    impact           = orbit_ok AND min_dist < 0.05
+    strict_collision = impact AND min_dist < 0.001         (a flag, subset of impact)
+    receding         = (NOT orbit_ok) AND trend_10y >= 0
+    approaching      = everything else
+In words: "impact" is short for impact-capable: the orbit can reach Earth's orbit region and the
+two-body model passes within 0.05 AU on some date in the window. It does NOT say the object will hit.
+"receding": the orbit stays clear of Earth's (MOID > 0.05 AU, not hazardous) and the distance does not
+shrink over the first 10 years. "approaching": the rest (closing but safe, or a low-MOID orbit that never
+comes within 0.05 AU in the window). The 10-year trend is deliberate: across 74 years d(end) - d(start)
+compares two arbitrary orbital phases and its sign disagrees with the 10-year sign for 34.5% of objects
+(trajectory_report.md). Edge rules (unit-tested on 12 hand-made cases): min_dist must be strictly
+below 0.05; a trend of exactly 0 counts as receding; MOID exactly 0.05 is inside the gate.
+Result (file, 42,670 objects): impact 12,314 (28.9%), approaching 20,540 (48.1%), receding 9,816
+(23.0%); strict_collision 16; PHAs 2,550, none receding; objects outside the MOID/PHA gate that still
+come within 0.05 AU: 0. Of 23,192 objects passing the orbit gate, 53.1% come within 0.05 AU at some time
+in 74 years but only 10.0% (2,309) within the first 10 years. UI labels (lib/colors.ts):
+"Impact-capable (diminishing radius)", "Approaching (closing, no impact path)", "Receding (never crash)".
+
+1.12 N-body equation of motion (nbody/dynamics.ts makeForce)
+------------------------------------------------------------
+The selected asteroid is a massless test particle (it pulls on nothing) in the barycentric ecliptic
+J2000 frame:
+    d2x/dt2 = SUM_k  GM_k (x_k(t) - x) / |x_k(t) - x|^3   +   a_1PN
+summed over ten point masses (nbody/ephemeris.ts BODY_ORDER): Sun, Mercury, Venus, Earth, Moon, Mars,
+Jupiter, Saturn, Uranus, Neptune. x_k(t) comes from the Hermite ephemeris (1.13). Mars..Neptune are
+system barycentres with GM including their moons. Earth and Moon are SEPARATE bodies (Moon = Earth +
+geocentric Moon from moon.bin), which matters for passes within a few hundred thousand km. GM from
+the JPL DE440 header (manifest "gm"), AU^3/day^2 / km^3/s^2:
+    Sun 2.9591221e-4 / 132,712,440,041   Earth 8.8877e-10 / 398,600.44   Moon 1.0932e-11 / 4,902.80
+    Jupiter 2.8253e-7 / 126,712,764   Saturn 8.4597e-8 / 37,940,585   Uranus 1.2920e-8 / 5,794,556
+    Neptune 1.5244e-8 / 6,836,527   Venus 7.2435e-10 / 324,858.6   Mars 9.5495e-11 / 42,828.4
+    Mercury 4.9125e-11 / 22,031.9
+Relativity: the Sun's first post-Newtonian correction (Schwarzschild, beta = gamma = 1). With
+r = x - x_sun, u = v - v_sun, mu = GM_sun:
+    a_1PN = mu / (c^2 r^3) * [ (4 mu / r - |u|^2) r_vec + 4 (r_vec . u) u ]
+GM_sun/c^2 = 1.4766 km. The relative size is ~(v/c)^2 ~ 1e-8: it shows up as slow perihelion drift
+over decades, not in one flyby. Option relativity: false switches it off.
+Rounding control: the ephemeris supplies each body as base (table node) + corr (interpolation increment)
+and the force forms (base - x_ref) + (corr - dx) (ephemeris.ts positionsSplit; ias15.ts passes x as
+x_ref + dx). Subtracting two ~1 AU numbers for a particle 1e-4 AU from Earth would otherwise lose
+~1e-16 AU, a visible noise floor in the force.
+NOT modelled: Ceres, Vesta, Pallas and the other massive asteroids (JPL uses 16), Pluto, Yarkovsky and
+other non-gravitational forces, radiation pressure, Earth oblateness (J2) and tides, solar J2, 1PN terms
+of the planets. See 2.12.
+
+1.13 Ephemeris tables and cubic Hermite interpolation
+-----------------------------------------------------
+Horizons gives positions AND velocities at nodes. Between nodes t_i and t_i + h, with s = (t - t_i)/h in
+[0, 1], the cubic Hermite interpolant is
+    p(s) = h00 p0 + h10 h v0 + h01 p1 + h11 h v1
+    h00 = 2s^3 - 3s^2 + 1      h10 = s^3 - 2s^2 + s       h01 = -2s^3 + 3s^2      h11 = s^3 - s^2
+and its derivative gives the velocity
+    v(s) = ((6s^2 - 6s)/h) p0 + (3s^2 - 4s + 1) v0 + ((-6s^2 + 6s)/h) p1 + (3s^2 - 2s) v1
+Position and velocity are exact at the nodes and continuous between them. Code: nbody/ephemeris.ts
+(hermite6, positions, positionsSplit, moonRelState); trajectory.py _hermite (Earth only);
+scripts/fetch_ephemeris.py hermite (validation).
+Node spacing: planets 1 day; Moon (geocentric) 12 hours. Measured error versus fresh Horizons samples
+(manifest "validation"): Earth worst 0.098 km, Mercury worst 20.0 km (fast orbit, 1-day nodes), Moon
+worst 0.316 km, rms 0.122 km. At 4 test epochs (2029, 2036/37 seam, 2095, 2100-12-30) planets are
+within 52 m and the Moon within 279 m of Horizons (measured, test_nbody.mts). Why 12 h: the coarsest
+divisor of a day with Moon error below 1 km (12 h: 0.3 km, 24 h: 5.1 km, fetch_ephemeris.py docstring).
+
+1.14 IAS15 integrator (nbody/ias15.ts)
+--------------------------------------
+IAS15 (Rein & Spiegel 2015) is an adaptive 15th-order integrator for y'' = a(t, y, y'). Over one step
+dt it models the acceleration as a degree-7 polynomial in tau = (t - t0)/dt, tau in [0, 1]:
+    a(tau) = a0 + b1 tau + b2 tau^2 + ... + b7 tau^7                 (b_p are 3-vectors; code: beta)
+Integrating twice gives closed forms for velocity and position at any tau:
+    v(tau) = v0 + dt ( a0 tau + SUM_p b_p tau^(p+1) / (p+1) )
+    x(tau) = x0 + dt tau v0 + dt^2 ( a0 tau^2 / 2 + SUM_p b_p tau^(p+2) / ((p+1)(p+2)) )
+x is a degree-9 polynomial; that is the "dense output" (class StepPoly) used for events and sampling.
+Nodes: the polynomial is pinned by accelerations at 7 special times in the step, the Gauss-Radau nodes
+(roots of P7(x) + P8(x), Legendre polynomials, root x = -1 dropped, mapped to [0,1]); computeNodes finds
+them numerically when the module loads (nothing hard-coded). With h_0 = 0 at the step start:
+    0, 0.0562625605, 0.1802406917, 0.3526247171, 0.5471536263, 0.7342101772, 0.8853209468, 0.9775206136
+Newton form:  a(tau) = a0 + SUM_{k=1..7} g_k * PROD_{i=0..k-1} (tau - h_i)
+g_k are divided differences of the node accelerations (gFromAccels) and are converted to the b_p (NK).
+One step (IAS15.step):
+ 1. Predict. Node accelerations start from the previous step's polynomial re-expressed on the new step
+    length (BINOM rescaling); the first step uses a0 at every node.
+ 2. Correct. Sweep nodes j = 1..7 (Gauss-Seidel): build x_j, v_j from the current b_p, evaluate the force
+    there, recompute g_j, update b_p. Repeat until the change of g_7 relative to max|a| is < 1e-16, or
+    stalls, max 12 sweeps.
+ 3. Error estimate. err = max|g_7| / max|a0|: the size of the highest-order term.
+ 4. Step control. dt_new = dt * (eps_eff / err)^(1/7) with eps = 1e-9 (REBOUND's default). If
+    dt_new / dt < 0.25 the step is rejected and retried smaller; an accepted step may grow by at most 4x.
+    Bounds in sim.ts runs: minDt 1e-9 d (class default), maxDt 20 d.
+ 5. Accept with compensated (Kahan) summation: cx, cv carry the low-order bits lost in each addition, so
+    rounding does not pile up as a secular drift over thousands of steps. A step can be clipped to land
+    exactly on a time (tLimit) and capped from outside (dtCap). sim.ts stepCap limits dt <= 0.2 * d / v
+    for both Earth and Moon so a step cannot jump through a body.
+Noise-floor guard: close to a body, force rounding noise does not shrink with dt, so err stops falling and a
+plain controller would crawl at minDt. The code keeps floorErr: if an accepted smaller step (dt < 0.9 *
+previous dt) leaves err > eps and err > 0.4 * previous err, then floorErr = max(floorErr, err); floorErr
+decays 0.98 per step; and eps_eff = min(max(eps, 2 * floorErr), 1e-6).
+Measured (test_nbody.mts): an e = 0.5 two-body orbit over 100 periods keeps |dE/E| < 7.4e-15 and
+|dL/L| < 1.3e-15, returns to its start within 1.2e-11 AU in 15,366 steps, and forward-then-backward
+integration returns within 7e-12 AU (time-reversible); Apophis at eps = 1e-9 versus 1e-12 agrees to
+4e-14 AU just after the flyby.
+
+1.15 Elements -> state vector, and how a run starts
+---------------------------------------------------
+nbody/elements.ts elementsToState turns (a, e, i, Om, w, M0) into a heliocentric position and velocity
+at the epoch: solve Kepler (1.5), perifocal position and velocity (1.6), rotate with P and Q, with
+mu = GM_sun. The integrator is barycentric, so sim.ts initialState adds the Sun's barycentric state from
+the ephemeris at the epoch: x_bary = x_helio + x_sun, v_bary = v_helio + v_sun. The state is then
+integrated silently (no samples) from the epoch to the requested start date, forward or backward. If
+the epoch lies outside the tables, the elements are first moved by Sun-only two-body motion
+(propagateElementsTwoBody: only M changes, M += n dt) to 1 day inside the nearest edge; twoBodyDays
+reports how far. The reverse map stateToElements (h = r x v; e-vector = ((v^2 - mu/r) r - (r.v) v) / mu;
+a = -mu / (2 (v^2/2 - mu/r)); ...) is used only by tests (round trip good to 1e-12 in a and e).
+Saved samples: heliocentric = barycentric - Sun; geocentric = barycentric - Earth (sim.ts writeSample).
+
+1.16 Time scales: TDB versus UTC
+--------------------------------
+SBDB epochs and Horizons tables are in TDB (Barycentric Dynamical Time); clocks run on UTC.
+    TDB ~ TT (differ < 2 ms),    TT = UTC + 69.184 s        (37 leap seconds + 32.184 s)
+    JD_TDB = (unix_ms + 69,184) / 86,400,000 + 2440587.5
+Code: nbody/constants.ts jdTdbFromUnixMs and unixMsFromJdTdb (TT_MINUS_UTC_S = 69.184, valid from 2017
+until the next leap second; no future leap-second table); cinematic/controller.ts toTdb and fromTdb. The
+cinematic HUD prints UTC through the inverse. Elsewhere the 69 s is ignored: the dashboard clock is a UTC
+JD fed straight into the Kepler formulas (position effect ~ n * 69 s ~ 1e-5 rad, invisible) and Python's
+jd_to_iso labels TDB Julian dates with a "Z".
+
+1.17 Events: close approach, impact, Hill sphere, escape energy, look-ahead
+--------------------------------------------------------------------------
+All in sim.ts simulateStream. After each accepted step the step polynomial gives x(tau), v(tau) anywhere
+in the step and the ephemeris gives Earth and Moon at the same time, so distances can be tested between
+steps without taking more steps. For each body (Earth, Moon): d(tau) = |x - x_body| and
+    H(tau) = dt * (rel_pos . rel_vel)             sign of d(d)/dt, direction-aware
+d has a minimum where H changes from negative to non-negative.
+Scan: each step is cut into NSCAN = 16 sub-intervals. A step is skipped if it cannot come close: the
+least distance is at least (d0 + d1 - L)/2 with L = 1.5 * |dt| * speed bounding the path length; if that
+exceeds 1.2 * max(0.05, 0.01, 0.0135) = 0.06 AU, nothing is computed.
+Root finding: bisection on the step polynomial; 55 halvings for a minimum (root of H) and 60 for the
+crossing of a radius (root of d - R); the result is far below a metre.
+Rules:
+  close approach  a distance minimum below 0.05 AU (Earth) or 0.01 AU (Moon) is recorded with distance,
+                  date and relative speed.
+  impact          d < R_body, R_earth = 6371 km, R_moon = 1737.4 km. The crossing time is found by
+                  bisection on d - R and the run ENDS there (status impact_earth / impact_moon), last
+                  sample on the surface. No atmosphere, no breakup.
+  Hill sphere     a fixed radius 0.01 AU = 1.496 million km around Earth (HILL_RADIUS_AU) marks hill_entry
+                  and hill_exit events. The physical Hill radius for Earth+Moon,
+                  a (m/3M)^(1/3), is 0.01004 AU (measured arithmetic).
+  escape energy   at a Hill exit, with r, v the geocentric state and mu_EM = GM_Earth + GM_Moon:
+                      energy = |v|^2 / 2 - mu_EM / |r|           (specific two-body energy)
+                  a candidate for escape needs energy > 0 (unbound) AND r.v > 0 (receding). At 0.01 AU
+                  the escape speed sqrt(2 mu_EM / r) is only 0.734 km/s, so nearly everything leaving
+                  the sphere is "unbound"; that alone is not trusted:
+  look-ahead      the Sun and planets can pull such an object back (it leaves Earth on a hyperbola but
+                  stays on an Earth-like solar orbit). lookaheadReturn forks a second integration from the
+                  exit state, same force model and tolerance, up to the end of the tables. "Returns" if,
+                  after first getting beyond 0.05 AU (RETURN_RADIUS_AU), it re-enters 0.05 AU, or if it
+                  never gets beyond it. Only if it never returns is the verdict escaped: the main run
+                  then keeps sampling postEscapeDays = 10 more days and stops (status escaped);
+                  otherwise "continues". Tested against a brute-force re-entry check.
+  requireEncounter (default true) the escape test fires only after the object has been inside the Hill
+                  sphere (or started inside); otherwise every NEO would be "escaped" at t0.
+  window end      the run reaches the end of the tables (or the safety caps maxSteps 3,000,000 /
+                  maxSamples 600,000, flagged truncated).
+Sampling tiers (DEFAULT_SAMPLING): every 1 minute inside 0.01 AU of Earth, hourly inside 0.05 AU, daily
+beyond. The Apophis run: 7,472 of 7,472 inside-Hill sample gaps are 1 minute (measured).
+
+1.18 Compressed radial scales used for rendering
+------------------------------------------------
+Real sizes do not fit one picture: asteroids sit 1e-4 to ~6 AU from Earth while Earth's radius is 4.3e-5 AU
+(1 AU = ~23,500 Earth radii). Three monotone maps turn a real distance r (AU) from a centre into a scene
+radius and keep the direction, so "nearer in reality" stays "nearer on screen". Scene unit: Earth radius = 2.
+(a) Dashboard (kepler.ts compressRadius, used by offsetToScene on the Earth-to-asteroid vector):
+        R(r) = R0 + K * log10(1 + r / S),      R0 = 3.4,  K = 5.6,  S = 0.001 AU
+    r -> 0: 3.4 (just outside the 2.16 atmosphere shell); r = 0.000138 AU: 3.71; 1 LD: 6.49 (this is the
+    Moon's drawn orbit, MOON_ORBIT_SCENE); 0.05 AU: 12.96; 1 AU: 20.2. Sizes are NOT to scale.
+(b) Cinematic Earth view (kepler.ts cinemaRadius, EARTH_RADIUS_AU = 4.2635e-5), true scale out to 6 Earth
+    radii, logarithmic beyond:
+        R(r) = r * (2 / EARTH_RADIUS_AU)                              for r <= 6 R_E = 2.558e-4 AU
+        R(r) = 12 + 12 * ln( r / (6 R_E) )                            for r > 6 R_E
+    Continuous at R = 12. An impact reaches the globe surface (R = 2 at r = R_E); Apophis' 2029 pass at
+    0.000254 AU draws at 11.9, the Moon at 39.7, 1 AU at 111.
+(c) Solar-system view (cinematic/ephemeris.ts wideRadius, used by toWide on HELIOCENTRIC vectors):
+        R(r) = 14 * ln(1 + r / 0.35)
+    Mercury 10.4, Earth 18.9, Jupiter 38.7, Neptune 62.5. Planet sizes are not to scale.
+Cinematic mode blends (b) and (c) with a weight w in [0, 1] (2.11).
+
+1.19 Worked example: 99942 Apophis (inputs from data/tests; the arithmetic recomputed for this file)
+-----------------------------------------------------------------------------------------------
+Input (data/neo_elements.json, SBDB fetched 2026-10-09, epoch JD 2461200.5 = 2026-06-09):
+    a = 0.9223592206975018 AU     e = 0.1911492279663492     i = 3.340996879880978 deg
+    Om = 203.8936514240762 deg    w = 126.6795706895841 deg  M0 = 175.3304026592739 deg
+    H = 19.09    SBDB diameter 0.34 km    MOID 0.000107917 AU    PHA = Y
+(1) Mean motion. a^1.5 = 0.88582950. n = 0.01720209895 / 0.88582950 = 0.019419198 rad/day =
+    1.1126381 deg/day. P = 2 pi / n = 323.5553 d = 0.8859 yr (SBDB "per" = 323.5553 d).
+(2) Pick t = JD 2462240.5 (2029-04-14 00:00), t - epoch = 1040 d.
+    M = 175.3304027 + 1.1126381 * 1040 = 1332.4740 deg = 252.4740 deg (mod 360) = -107.5260 deg
+    = -1.876682 rad.
+(3) Newton. E_0 = M + e sin M = -2.058958. Steps dE: -1.2347e-2, -1.1858e-5, -1.0984e-11, -2.0e-16, so
+    E = -2.0465993510 rad (-117.26 deg), residual E - e sin E - M = 2e-16 (4 evaluations).
+(4) Orbit plane. b = a sqrt(1 - e^2) = 0.9053518. x_p = a (cos E - e) = -0.5987971,
+    y_p = b sin E = -0.8047900, r = 1.0031176 AU (check: a (1 - e cos E) = 1.0031176).
+(5) Rotation. P = (0.8704322, -0.4900646, 0.0467386), Q = (0.4917221, 0.8700560, -0.0348119).
+    Heliocentric position = x_p P + y_p Q = (-0.9169453, -0.4067632, 0.0000294) AU.
+(6) Earth at the same instant from planets.bin (Earth minus Sun, Hermite): (-0.9167571, -0.4067717,
+    0.0000298) AU, |R| = 1.0029490 AU. Asteroid minus Earth = (-1.8825e-4, +8.54e-6, -4.0e-7) AU, so
+    d = 1.8844e-4 AU = 28,190 km = 0.073 LD. With the dashboard's Standish Earth the same instant gives
+    2.63e-4 AU: the two Earths differ by 7.7e-5 AU (11,500 km).
+(7) Scanning the whole window with refinement gives the minimum d = 0.000138 AU = 20,622 km on
+    2029-04-14T00:54:47Z, 55 minutes after the instant in (6); the coarse 5-day grid alone gave
+    0.00662 AU. MOID 0.000108 <= 0.05 and PHA, so orbit_ok; 0.000138 < 0.05 gives impact; 0.000138 <
+    0.001 sets strict_collision. trend_au_10y = -1.0295 (distance 1.03 AU smaller after ten years),
+    trend_au_full = -0.0616. next_close_approach: 2029-04-14 (0.000138 AU), 2060-04-12 (0.0242),
+    2091-04-10 (0.0472). The last two are two-body artefacts: JPL's perturbed orbit has 2051-04-20 at
+    0.0415 AU and 2066-09-16 at 0.0694 AU and nothing within 2 AU in 2068 (test_trajectory.py comments).
+(8) N-body from the same full-precision elements (start 2026-10-09, IAS15 eps 1e-9, 10 bodies + 1PN):
+    minimum Earth distance 0.000254102 AU = 38,013 km at JD 2462240.4071 (2029-04-13 ~21:46), relative
+    speed 7.42 km/s. Horizons: 0.000254091 AU at JD 2462240.40694. Difference 1.1e-8 AU = 1.7 km and 0.21
+    minutes. The 74-year run takes 3,643 steps, 36,454 samples, 79 ms (measured, test_nbody.mts).
+    Two-body gave 0.000138 AU because it ignores 2.5 years of planetary perturbation since the epoch and
+    Earth's own focusing. Running the N-body from the ROUNDED elements in asteroids.json (a, e to 6 decimals,
+    angles to 4) gives 0.000246714 AU = 36,908 km, 1,105 km short; 3-4 digit rounding gives 0.009619 AU
+    (test INFO line). A 1 km error in the 2026 start state becomes 47,656 km by 2030 (measured).
+(9) Diameter: p = 0.14 gives 0.540 km, SBDB's albedo 0.35 gives 0.342 km = the shipped 0.34 km. Marker
+    size 0.034 + 0.058 log10(35) = 0.1236.
+(10) Render scale: d = 0.000138 AU draws at R = 3.71 (dashboard) or 6.47 (cinematic, Earth radius 2);
+    0.000254 AU draws at 11.9 (cinematic). Time warp at the perigee: v = 7.42 km/s = 0.004287 AU/day,
+    d/v = 0.0593 d, rate = max(d/v / 4, 0.002) = 0.0148 d/s, about 21 minutes of simulated time per
+    real second (2.11).
+
+==============================================================================================
+PART 2 - HOW WE SIMULATED AND RAN THE 3D RENDERS
+==============================================================================================
+
+2.1 The pipeline end to end
+---------------------------
+  neo_v2.csv  (90,836 close-approach rows; 27,423 objects)                        given, repo root
+       |
+  scripts/fetch_sbdb.py ------------> data/raw/sbdb_neo.json                      42,670 NEOs, full precision
+       |
+  scripts/build_elements.py --------> data/neo_elements.json                      elements + MOID + H + diameter
+       |    (CSV id -> SBDB match)      data/coverage_report.md, data/raw/match_log.json,
+       |                                data/raw/sbdb_alias_resolve.json (cache)
+  scripts/validate.py                   checks the files above and the outputs below
+       |
+  scripts/fetch_ephemeris.py -------> app/public/data/ephemeris/{planets.bin, moon.bin, manifest.json}
+       |
+  scripts/trajectory.py ------------> app/public/data/asteroids.json              what the app loads
+       |                              data/asteroids_trajectories.json, data/trajectory_report.md
+  app/  (Vite + React + three.js)     loads asteroids.json at start; loads the ephemeris when the user
+                                      opens cinematic mode, which runs the N-body engine in a web worker
+
+2.2 Step 0 - audit of the CSV files (repo root)
+-----------------------------------------------
+neo_v2.csv columns: id, name, est_diameter_min, est_diameter_max, relative_velocity, miss_distance,
+orbiting_body, sentry_object, absolute_magnitude, hazardous. 90,836 data rows, 27,423 unique (id, name)
+pairs (measured). neo_cleaned.csv has the same 90,836 rows without id and name, so it cannot be joined to
+anything; only neo_v2.csv is used. The CSV has no orbital elements, no MOID and no date column: it is a list
+of observed close approaches. Columns used: miss_distance (km), hazardous, est_diameter_min/max (km); the
+unit of relative_velocity is not stated in the file and it is unused.
+Does it cover all asteroids? No: it reaches 27,181 of 42,670 SBDB NEOs (63.7%); 15,489 (36.3%, 422 of
+them PHAs) are absent (coverage_report.md). That is why the SBDB catalogue is fetched.
+
+2.3 Step 1 - JPL SBDB fetch (scripts/fetch_sbdb.py)
+---------------------------------------------------
+One HTTPS GET to https://ssd-api.jpl.nasa.gov/sbdb_query.api with sb-kind=a (asteroids), sb-group=neo,
+full-prec=true and fields
+    spkid, full_name, pdes, name, a, e, i, om, w, ma, epoch, per, moid, H, diameter, albedo, pha, neo
+full-prec=true returns full double precision; the default rounds elements, which ruins flyby prediction
+(1.19, 2.12). No pagination was needed: one reply of 10,028,018 bytes, count = 42,670. Up to 6 attempts with
+growing back-off; exit code 2 on network failure. data/raw/sbdb_neo.json is the raw reply: signature,
+fields[], data[] (rows of STRINGS such as "1.458243716760167") and count.
+
+2.4 Step 2 - matching CSV ids to SBDB, writing neo_elements.json (scripts/build_elements.py)
+--------------------------------------------------------------------------------------------
+CSV ids are old-style SPK ids (2,000,000 + number for numbered asteroids), SBDB uses 20,000,000 + number,
+so direct matching works for only some. Tried per CSV object, in this order (counts from the report):
+    spkid equality                          6,259
+    leading number in name -> SBDB pdes     2,727     "162635 (2000 SS164)" -> 162635
+    parenthesised designation -> pdes      17,557
+    designation -> full_name                  799
+    SBDB single-object API alias lookup        37     (sstr=key; cached in data/raw/sbdb_alias_resolve.json)
+    unmatched                                  44     (36 confirmed by SBDB as no longer NEO-class)
+27,379 of 27,423 CSV objects (99.8%) matched, to 27,181 distinct SBDB objects (198 SBDB objects appear
+under more than one CSV id: renumbered or duplicated designations). Then ONE ROW PER SBDB NEO is written:
+nothing was dropped (no null elements, no e >= 1 or a <= 0). Fields: elements, per, moid, H, diameter_km
+and diameter_src (sbdb | H_albedo0.14 | csv_mean | none), pha (Y -> true; null -> false, 134 nulls), id =
+SBDB spkid as a string, name = SBDB full_name, and CSV extras (csv_id, in_csv, hazardous_csv,
+min_miss_distance_km_csv). validate.py re-counts the filter independently on the raw rows and checks
+types, ranges, uniqueness and in_csv consistency (all pass, measured).
+
+2.5 Step 3 - JPL Horizons ephemeris tables (scripts/fetch_ephemeris.py)
+-----------------------------------------------------------------------
+Why: the N-body engine and trajectory.py's Earth need accurate Sun, planet, Earth and Moon states.
+Horizons API https://ssd.jpl.nasa.gov/api/horizons.api, EPHEM_TYPE=VECTORS, VEC_TABLE=2 (position +
+velocity), OUT_UNITS=AU-D, REF_PLANE=ECLIPTIC, REF_SYSTEM=ICRF, CSV rows:
+    bodies  Sun (10), Mercury (199), Venus (299), Earth (399) and the system barycentres of Mars (4),
+            Jupiter (5), Saturn (6), Uranus (7), Neptune (8); centre = solar-system barycentre "500@0"
+    Moon    (301) centred on Earth "500@399" (geocentric)
+    grid    planets every 1 day, Moon every 12 h, 2020-01-01 00:00 TDB .. 2100-12-31 00:00 TDB inclusive:
+            29,585 daily rows (JD 2458849.5..2488433.5) and 59,169 Moon rows
+GM values come from the JPL DE440 header (ssd.jpl.nasa.gov/ftp/eph/planets/ascii/de440/header.440), with
+Earth and Moon split from the Earth-Moon GM using EMRAT = 81.30056822. Positions are labelled DE441
+(Horizons), constants DE440; at this accuracy the mix is harmless.
+Mechanics: requests are chunked (3,100 planet rows, 4,400 Moon rows) and run in a thread pool (--workers,
+default 4; Horizons answers 503 above ~4-6), with exponential back-off and jitter; every reply is checked
+(the $$SOE marker, row count, JD grid). --cache-dir stores finished chunks so a failed run resumes. If
+Horizons or the GM source is unreachable the script exits 2 and writes nothing; it never fabricates data.
+Extending: --extend keeps the existing tables, fetches only the missing span starting from the LAST
+existing row, requires that overlap row to match the disk (< 1e-9 AU, < 1e-10 AU/day), appends, and re-grids
+the Moon by pure subsampling (every 6th 2-hour node = 12 h). The manifest records
+extension {extendedUtc, baseEndJd 2465058.5, seamIndex 6209}. The original tables (made 2026-10-09) ended
+2036-12-31 with a 2-hour Moon grid; they were extended to 2100-12-31 the same day (manifest "extension").
+--validate / --validate-only compare Hermite interpolation with fresh Horizons samples (Earth, Mercury,
+Moon; windows at the start, the seam, the middle, the end) and store the errors in manifest "validation"
+(1.13). Sizes (measured): planets.bin 12,780,720 B, moon.bin 2,840,112 B, manifest.json 3,297 B.
+
+2.6 Step 4 - trajectory.py: screening, categories, outputs
+----------------------------------------------------------
+python -I scripts/trajectory.py reads data/neo_elements.json and applies 1.3-1.11 to every object (numpy,
+blocks of 5,000 objects, one core; the latest report says 45 s, the previous run 64 s). Outputs:
+  app/public/data/asteroids.json     the file the app loads: 42,670 rows, 15.6 MB (tests assert < 16 MB).
+                                     Rounded for size: a, e 6 decimals; i, om, w, ma 4; min_dist_au 6;
+                                     diameter_km 5; trends 4. Fields in 3.4.
+  data/asteroids_trajectories.json   1.4 MB: for the 300 closest objects (every impact object by ascending
+                                     min_dist, then the closest others) three 60-point polylines (one
+                                     heliocentric orbit period; the 74-year geocentric path; +-60 d around
+                                     closest approach) plus Earth's 1-year orbit. Produced for the plan's
+                                     hand-off; the app does not load it (searched app/src).
+  data/trajectory_report.md          method, rule re-check, counts, per-period flyby table, top-20 lists,
+                                     accuracy caveats.
+Headline numbers (file): 21,037 close approaches (< 0.05 AU) on 12,292 objects; 819 objects have more than 3
+(list truncated, n_close_approaches shipped). Passes under 0.001 AU by span: 3 (first 10 years), 5, 4, 5. Closest
+in the window: (2018 VO6) 0.00014 AU = 20,409 km on 2058-05-07, then Apophis 20,622 km on 2029-04-14.
+
+2.7 Two tiers: two-body screening for everything, N-body for one, and why
+-------------------------------------------------------------------------
+Tier 1, two-body (Keplerian), all 42,670 objects. Closed form: the position at any time is one Kepler solve and
+a rotation, independent of history. Used twice: offline in Python for categories and minima (5,424 samples x
+42,670 objects in under a minute) and live in the browser for the dots (every frame, any clock speed, running
+backwards, no stored state). Limit: only the Sun pulls, so planetary perturbations, Earth's pull during a flyby
+and non-gravitational forces are absent.
+Tier 2, N-body, the one selected object. Numerical integration through the real force field (10 bodies + 1PN)
+with event detection. A 74-year run is ~0.1 s in JavaScript (Apophis: 79 ms and 150 ms in two runs, measured). It
+finds impacts, Moon passes and escape, and reproduces Horizons to ~2 km for Apophis. Cost: ~3,000-4,000 steps,
+each with 8 or more evaluations of a 10-body force plus ephemeris interpolation.
+Why not N-body for all: 42,670 runs at ~0.1 s is roughly an hour of single-thread work (a rough extrapolation,
+not measured), impossible per frame in a browser, and unnecessary for an overview where position and colour
+are what matter. Why not two-body for the selected one: it cannot show impacts, Moon passes or escape, and it
+is off by a factor 1.8 for Apophis (0.000138 versus 0.000254 AU).
+The tiers also trust the elements differently: tier 1 treats them as an ellipse around the Sun; tier 2 converts
+them to a state vector at the epoch (1.15) and lets the planets act on it. For 5,297 objects (12.4%) the element
+epoch is before 2020-01-01, outside the ephemeris; for them tier 2 first moves the elements to 2020-01-02 by
+Sun-only two-body motion (twoBodyDays), so their N-body start state is less accurate (Apophis from a 1987 epoch:
+0.00414 AU off, measured in test_nbody.mts).
+
+2.8 Updating ~42k asteroids every frame (lib/positions.ts, lib/keplerWorker.ts, lib/kepler.ts)
+----------------------------------------------------------------------------------------------
+Load (lib/data.ts): fetch /data/asteroids.json (cache: no-cache), parse, drop invalid rows (unknown category,
+a <= 0, e outside [0, 1), non-finite elements), then build typed arrays:
+    table     Float64Array(count * 12)   packed per-object constants (1.6), 4.1 MB
+    cat       Uint8Array(count)          0 impact, 1 approaching, 2 receding
+    size      Float32Array(count)        marker scale (1.10)
+    haystack  string[]                   lower-case "name id" for search
+    counts and stats (PHA total, closest pass, largest)
+If the real file fails to load, /data/asteroids.mock.json (random placeholder orbits from app/scripts/gen-mock.mjs,
+names ending "(mock)") is used and the hero shows a "Demo data" badge.
+Per frame (scene/AsteroidField.tsx useFrame) calls engine.update(clock.jd) on a PositionEngine:
+  - A module Web Worker (keplerWorker.ts) holds a copy of the table. The main thread posts {step, jd, buf}; the
+    worker runs computeScenePositions: earthHelio(jd) once, then for every object helioPosition, subtract Earth,
+    offsetToScene (1.18a), writing xyz into buf, and posts buf back.
+  - Buffers are TRANSFERRED (postMessage transfer list), not copied. Two Float32Array(count * 3) (512 KB each)
+    ping-pong, "double buffering": the render loop reads `current` while the worker fills `spare`; when a reply
+    arrives they swap. At most one request is in flight and nothing is posted if jd is unchanged (paused). So the
+    main thread never waits for 42k Kepler solves; the dots may lag the clock by a frame or two.
+  - If the worker fails to start or errors, PositionEngine falls back to inline computation. start() and dispose()
+    are idempotent and restartable, so React StrictMode's mount-unmount-mount keeps a single worker.
+Simulation clock: clock.jd (lib/store.ts) is a plain mutable object, not React state. CameraRig's ClockDriver adds
+speed * delta each frame, speed from SPEEDS = [-100, -30, -10, -3, -1, 0, 0.25, 1, 3, 10, 30, 100] simulated days
+per real second (default 1), clamped to [today, end of ephemeris coverage]. Users with prefers-reduced-motion start paused.
+Frame rate was not benchmarked for this file.
+
+2.9 InstancedMesh, colouring, picking (scene/AsteroidField.tsx, scene/rockGeometry.ts, scene/OrbitTrail.tsx)
+-------------------------------------------------------------------------------------------------------------
+- One THREE.InstancedMesh draws all visible asteroids in a single draw call. Geometry: an icosahedron whose
+  vertices are pushed in or out by a smooth function of position and squashed into an irregular lump
+  (makeRockGeometry); detail 0 (20 triangles) when count > 12,000. Material: MeshStandardMaterial, flat shading,
+  roughness 0.85, patched in onBeforeCompile to add 0.38 x its own colour as emission so category colours stay
+  readable on the night side. frustumCulled is off and raycast disabled.
+- Each frame the CPU writes every instance matrix: a rotation about a per-object random axis (axis, phase, rate
+  from a seeded LCG, fixed per session), uniform scale size[k] * boost, translation from the position buffer.
+  boost = clamp(cameraDistance / 30, 1, 2.5) keeps far markers legible. The selected asteroid gets scale 0 in the
+  instanced mesh and is drawn as a separate detailed rock (icosahedron detail 3) plus a camera-facing ring.
+- Visibility: the toggles build a Uint32Array of visible indices; mesh.count = its length. Colours: per-instance
+  instanceColor from CATEGORY_RGB (impact red #ff4d5a, approaching amber #ffb020, receding cyan #3cd6f0),
+  rewritten only when the visible set changes.
+- Picking is in screen space, not by raycasting 42k meshes (hundreds of ms per click versus < 1 ms): project each
+  visible position with the view-projection matrix, keep those within max(11 px, size * boost * focal / w + 5),
+  score = (pixel distance / threshold)^2 + w * 1e-4 (closest to the cursor, then nearest the camera), and drop
+  anything hidden behind the Earth sphere (ray-sphere test). A click counts if the pointer moved <= 5 px in < 700
+  ms; hover is throttled to one pick per animation frame and feeds the Tooltip. Picking is off in cinematic mode.
+- OrbitTrail: for the selected asteroid a 480-point Earth-relative path from 200 days before to 400 days after the
+  clock, through the same compressed mapping, fading dim to bright; rebuilt every 110 simulated days or when the
+  selection changes.
+- Memory for 42,670 objects: element table 4.1 MB, positions 0.5 MB x 2, instance matrices 2.7 MB.
+
+2.10 Earth, Moon and Globe (ported from the Land Dispute project)
+-----------------------------------------------------------------
+Source: C:\Users\medha\Desktop\Hackathons\Land Dispute\frontend\src\features\home\Globe.tsx and public\earth.jpg.
+Ported to app/src/scene/Globe.tsx unchanged in substance: radius-2 sphere, 64 x 64 segments,
+MeshStandardMaterial(map = earth.jpg, roughness 0.7, metalness 0.05), 23.5 degree axial tilt, spin 0.18 rad/s,
+a faint back-side atmosphere shell (scale 1.08, #4da6ff, opacity 0.1, 48 x 48), sRGB colour space applied in the
+texture-loader callback (so it is set before the GPU upload), frame delta clamped to 50 ms. Scene lights,
+background and camera (ambient 0.6 + directional [5, 5, 5]; #040a16; fov 50) follow the plan's notes on the
+source; only Globe.tsx was re-read for this file.
+Changed: the India lock (scroll-driven slerp to a lat/lon), scrollStore and geoSphere are gone, so Earth just
+spins (stopped for reduced motion). Spin sign is prograde (west to east, += instead of -=). The tilt is about X
+by -23.5 degrees instead of about Z, because the scene axes are the ecliptic mapped (x, z, -y): ecliptic north
+is +Y and Earth's pole leans toward -Z (comment in Globe.tsx).
+earth.jpg is a byte-identical copy (md5 ef51faaa231012ab7b04352ee74cc90f, 2048 x 1024, 223,764 B).
+Moon (new, scene/Moon.tsx): textured sphere of radius 0.2727 x Earth's = 0.545 on a circular orbit tilted 5.145
+degrees, drawn at the compressed radius of 1 LD (6.49 units), longitude from the mean-longitude series
+L = 218.316 + 13.176396 * (JD - J2000) degrees (a 27.3 d period), tidally locked (the mesh is a fixed child of
+the rotating pivot). Texture: a procedural cratered canvas (seeded noise + 650 craters) unless app/public/moon.jpg
+exists at build time (vite.config.ts defines __HAS_MOON_TEXTURE__; no such file exists). In cinematic mode the
+Moon follows the Horizons geocentric table. Other scene parts: drei Stars, OrbitControls (dashboard zoom range
+2.6..95 units), gsap camera tweens (3.2).
+
+2.11 Cinematic mode, step by step
+---------------------------------
+1. "Cinematic" on the InfoCard calls startCinema(index) (lib/cinematic/controller.ts). It cancels any earlier job
+   (a run token discards stale callbacks), sets store.cinema = "loading" with stage "ephemeris" (HUD text: loading
+   the planet and Moon tables, about 15 MB, cached after the first time).
+2. It awaits ready() (the NBodyClient worker has fetched manifest.json, planets.bin and moon.bin, with a
+   ?v=count-count-step cache-buster, and built the Ephemeris) and loadMainEphemeris() (a second copy on the main
+   thread for planet positions in the solar-system view). The coverage [start, end] is published (lib/coverage.ts)
+   and bounds the date picker.
+3. Start time = the dashboard clock converted to TDB, clamped to [coverage start + 0.5 d, coverage end - 30 d]; a
+   note is shown if it moved. Stage becomes "integrating".
+4. NBodyClient.run(elements from asteroids.json, tStart, {direction: 1, chunkSamples: 1500}, {includeMoon: true})
+   posts a job to nbody/nbody.worker.ts, which iterates the simulateStream generator (1.14-1.17). Per chunk it
+   converts samples to Float32 arrays (samplesToArrays: geocentric position, heliocentric position, Moon geocentric
+   position, distances to Earth and Moon), posts them with a transfer list, and yields to the event loop
+   (setTimeout 0) so a cancel message can arrive. Events (close approaches, Hill crossings, impact) ride with each
+   chunk; the final summary ends the job.
+5. appendChunk on the main thread: typed arrays grow by doubling, the closest approach so far is tracked, and the
+   two scene polylines are extended (localPath = cinemaOffsetToScene of geocentric positions, widePath = toWide of
+   heliocentric ones); pathVersion tells the scene to re-upload them. With 2 samples in hand, begin() sets
+   cine.active = true: PLAYBACK STARTS WHILE THE INTEGRATOR STILL RUNS. The HUD shows "Integrating ... N%" and the
+   scrub range grows with the samples that exist.
+6. Every frame (scene/Cinematic.tsx CinematicDriver):
+   a. sampleAt (cinematic/trajectoryMath.ts): binary search for the sample interval containing cine.t, LINEAR
+      interpolation of position between samples, speed from the interval. Sampling is dense near Earth (1 min) and
+      sparse far away (1 d), so linear interpolation is adequate where it matters.
+   b. Time warp. Base rate cine.baseRate (default 60 simulated days per real second; menu 5/20/60/180/365). With
+      "Slow near approach" on:
+          rate = min(baseRate, max(tau / 4, 0.002)),       tau = distance / speed   (days to cover the distance)
+      so the remaining approach or departure never takes less than ~4 real seconds, with a floor of 0.002 d/s
+      (2.9 simulated minutes per second). Example: 0.1 AU at 7 km/s gives tau = 24.7 d, rate = 6.2 d/s.
+   c. cine.t += rate * dt (dt capped at 50 ms). Stop rules: if t reaches the end of what exists, wait for more
+      samples; if the run is complete with status window_end (reached 2100-12-31) LOOP to the start; if the
+      status is impact_earth, impact_moon or escaped, stop exactly at tStop, set ended and show the banner (impact
+      adds an expanding additive flash sphere; escaped says the object leaves and does not return). Replay
+      restarts; the slider scrubs anywhere in [tStart, tStop].
+   d. View weight w (0 = Earth-centred, 1 = solar system). Auto: w_target = smoothstep(0.02, 0.25, distance in AU),
+      so inside 0.02 AU the view is Earth-centred and beyond 0.25 AU heliocentric; w eases toward it with
+      1 - exp(-2.2 dt). Earth sits at toWide(Earth heliocentric from the tables); the asteroid blends between
+      Earth + cinemaOffsetToScene(geocentric) and toWide(heliocentric); the Moon between its true-scale offset
+      and a fixed 2.1-unit orbit; the Sun lies far along the true Sun direction in Earth view and at the origin in
+      the wide view; Mercury..Neptune are placed from the tables (analytic ellipses for the orbit lines); Earth
+      and Moon shrink (x0.3 and x0.45) in the wide view.
+7. Scene changes: the directional light is replaced by a point light at the Sun; AsteroidField is hidden (only the
+   selected asteroid is shown); AsteroidActor draws the rock, a ring, past and future trails (Earth-relative trail
+   limited to +-45 days, heliocentric trail whole); CinematicCamera frames Earth plus asteroid (capped at 40 units of
+   separation) or, in wide view, at least 120 units out, blending with the same w; it keeps the user's orbit
+   direction and zoom ratio, drifts when the user is idle for 3.5 s, zoom limits 0.5..900.
+8. exitCinema() cancels the job, writes the cinematic time back into the dashboard clock (clamped) and returns home.
+
+2.12 Known accuracy limits and caveats
+--------------------------------------
+Apophis in numbers (1.19): two-body 0.000138 AU; N-body from full-precision elements 0.000254102 AU (Horizons
+0.000254091, 1.7 km, 0.2 min); N-body from the rounded elements shipped in asteroids.json 0.000246714 AU (1,105 km
+off); the engine-vs-Horizons gap one year after the flyby is 14,231 km (9.5e-5 AU), and 5.7e-4 AU after ~7.6 years.
+ 1. Rounded elements. asteroids.json holds a, e to 6 decimals and angles to 4. Fine for dots, but cinematic mode
+    integrates from these values, so sensitive flybys move (1 km at the start becomes 47,656 km by 2030 for
+    Apophis). Elements carry no uncertainty (SBDB covariance is not used): results are "what these elements
+    imply", not forecasts with error bars. Elements rounded to 3-4 digits would be useless (0.009619 AU for Apophis).
+ 2. Not modelled in N-body: massive asteroids (JPL's Apophis solution uses 16), Pluto, Yarkovsky and radiation
+    forces, Earth J2 and tides, solar J2, planetary 1PN. test_nbody.mts attributes the post-flyby Horizons gap to
+    Yarkovsky plus the 16 asteroids, amplified by the flyby.
+ 3. Old epochs. 5,297 objects have element epochs before the tables begin; their N-body start is two-body-propagated
+    (2.7).
+ 4. Two-body screening. Flyby dates and distances after ~2040 are indicative only: the osculating a differs from the
+    long-term mean by ~1e-4..1e-3 relative, giving up to ~0.7 rad of phase error over 74 years; encounters change
+    orbits (Apophis 2029: a from 0.92 to ~1.1 AU, which two-body cannot know); Earth's focusing is ignored (matters
+    below ~0.001 AU); the model's own Apophis passes in 2060 and 2091 differ from JPL's 2051 and 2066.
+ 5. "impact" is not a prediction. 12,314 objects (28.9%) carry the label; it is mostly orbit geometry (a conjunction
+    near a node crossing within 74 years). Read it with min_dist_au, min_date, strict_collision (16 objects) and
+    next_close_approach. Even strict_collision is an unperturbed, unfocused geometry statement.
+ 6. Diameters. 97% are estimated from H with albedo 0.14; true albedos run from ~0.03 to ~0.5, so a factor ~2 or more
+    either way (Apophis: 0.54 km estimated versus 0.34 km measured).
+ 7. Dashboard Earth is the Standish Earth-Moon barycentre, up to 1.4e-4 AU (~21,000 km) from DE441's Earth centre.
+    InfoCard "Distance now" and the dots use it; min_dist_au in the file uses DE441. At the instant of 1.19 (6) the
+    two give 0.000263 versus 0.000188 AU for Apophis. The dashboard Moon is a circular mean-longitude model on the
+    compressed scale (visual only); cinematic mode uses the true Horizons Moon.
+ 8. Ephemeris coverage. 2020-01-01..2100-12-31 (extended 2026-10-09; previously to 2036-12-31). Cinematic start is
+    clamped into [start + 0.5 d, end - 30 d]; runs end at 2100-12-31; the dashboard clock runs [today, 2100-12-31].
+    15.6 MB of tables are downloaded (and held twice: worker and main thread); the browser caches them.
+ 9. Interpolation error is 0.1 km (Earth), 20 km (Mercury), 0.3 km (Moon): far below anything visible.
+10. Time scale: the dashboard ignores the 69 s UTC/TDB offset (1.16).
+11. Two Earth radii exist in code: 6371 km (nbody/constants.ts, used for impact tests) and EARTH_RADIUS_AU =
+    4.2635e-5 AU = 6378 km (kepler.ts, used for the display scale); 0.1% apart.
+12. UI text. ControlsPanel prints "Categories are computed for the <today> to <coverage end> window" using today's
+    date, while the pipeline window starts on the fixed date 2026-10-09; the label is exact only on that day.
+13. Planet fallback. cinematic/ephemeris.ts PLANETS has Earth's mean-longitude rate 35999.37306329 while kepler.ts
+    uses Table 1's 35999.37244981; the difference (6e-6 deg per century) is immaterial and affects only the fallback
+    and the orbit lines. I did not check which JPL table the first value comes from.
+14. No WebGL, or a scene exception: App.tsx shows a static Earth disc (supportsWebGL, ErrorBoundary).
+
+==============================================================================================
+PART 3 - UI AND BACKEND COMPOSITION
+==============================================================================================
+
+3.1 Repository layout
+---------------------
+Aesteroid Detection/                      git repo (the folder name is spelled "Aesteroid" on disk)
+  EXPLANATION.txt                         this file
+  neo_v2.csv (9.5 MB), neo_cleaned.csv (7.6 MB)    input close-approach lists (2.2)
+  .gitignore                              node_modules/ dist/ .claude/ __pycache__/ *.pyc .env .vite/ *.log
+  .claude/launch.json                     dev-server entry "asteroid-app": npm --prefix app run dev -- --port 5174 --strictPort
+  scripts/                                offline "backend" and tests (3.5, 3.6)
+      fetch_sbdb.py  build_elements.py  validate.py  fetch_ephemeris.py  trajectory.py
+      test_trajectory.py  test_nbody.mts
+  data/                                   intermediate files and reports (3.4)
+      raw/ (sbdb_neo.json 10.0 MB, match_log.json, sbdb_alias_resolve.json)
+      neo_elements.json 17.5 MB, coverage_report.md, asteroids_trajectories.json 1.4 MB, trajectory_report.md
+  app/                                    the web app = the Vite project root
+      index.html  package.json  package-lock.json  vite.config.ts  tsconfig*.json
+      scripts/gen-mock.mjs                writes public/data/asteroids.mock.json
+      public/earth.jpg
+      public/data/asteroids.json (15.6 MB)  asteroids.mock.json (9.5 MB)
+      public/data/ephemeris/{planets.bin, moon.bin, manifest.json}
+      src/main.tsx  App.tsx  ErrorBoundary.tsx  app.css
+      src/lib/    kepler.ts keplerWorker.ts positions.ts data.ts store.ts coverage.ts colors.ts
+                  nbody/      constants ephemeris elements dynamics ias15 sim trajectory nbody.worker client index
+                  cinematic/  controller engine ephemeris state trajectoryMath
+      src/scene/  Scene Globe Moon moonTexture AsteroidField rockGeometry OrbitTrail CameraRig Cinematic
+      src/ui/     HeroContent ControlsPanel InfoCard Tooltip CinematicHUD format
+      dist/                               build output (git-ignored)
+  node_modules/ (empty apart from .tmp) and npm-install.log ("done")   stray root-level leftovers
+
+3.2 UI components (app/src)
+---------------------------
+App.tsx           Top level. supportsWebGL() check; lazy-loads scene/Scene.tsx inside ErrorBoundary + Suspense with a
+                  static Earth-disc fallback; applies prefers-reduced-motion (pauses the clock); calls loadCoverage()
+                  and loadAsteroids() (store.setData / setError); shows the dashboard overlay (HeroContent,
+                  ControlsPanel, InfoCard, hint line, Tooltip) or CinematicHUD depending on store.cinema.
+ErrorBoundary.tsx Shows the fallback if the 3D scene throws; logs the error.
+ui/HeroContent    Title "Asteroid Watch", description, loading/error status, four stats (Tracked = rows, Hazardous =
+                  PHA count, Closest pass = smallest min_dist_au, Largest = biggest diameter), "Demo data" badge for mock.
+ui/ControlsPanel  Collapsible panel (starts collapsed on screens <= 820 px wide), containing:
+                  - three category switches (role=switch) with colour, label, sub-label and live counts; switching off
+                    the selected asteroid's category deselects it;
+                  - Search: substring on lower-case "name id", needs 2+ characters, up to 8 results, Enter takes the
+                    first; choosing selects the asteroid and re-enables its category;
+                  - Time: play/pause, speed slider over SPEEDS (-100..+100 days per second, "Reverse" for negative),
+                    date input limited to [today .. coverage end], "Now" button;
+                  - View chips "Earth" and "Full scene" (camera presets) and a note on the category window.
+ui/InfoCard       Card for the selected asteroid: category pill, "Potentially hazardous" and "Collision course" pills,
+                  name, diameter, distance now (earthDistanceAu, Standish Earth; LD or AU plus km), closing/moving away
+                  with radial speed (distance change over 0.01 d), closest approach (min_dist_au and date), orbital
+                  period (365.256 * a^1.5), a / e / i, designation, up to 3 upcoming close approaches, buttons
+                  Cinematic (startCinema), Follow (camera follows the asteroid), "JPL record" link to
+                  ssd.jpl.nasa.gov/tools/sbdb_lookup.html#/?sstr=<id>, and a note on the 200 d back / 400 d ahead trail.
+ui/Tooltip        Hover label (colour dot, name, diameter) that follows the pointer.
+ui/CinematicHUD   Cinematic overlay: top bar with "Exit cinematic" and the asteroid's name/category/diameter; readouts
+                  (distance to Earth in LD or AU and km, relative speed km/s, UTC date, closest approach, playback rate
+                  with "slow-motion" label); controls (play/pause, scrub slider with elapsed/total days, base speed
+                  menu 5/20/60/180/365 d/s, "Slow near approach" checkbox, view buttons Auto / Earth-centred / Solar
+                  system); notes (live integration progress, truncation warning, clamped-date note, scale disclaimer);
+                  overlays: loading bar (stage "Loading ephemeris" or "Simulating trajectory" with progress), error
+                  panel, impact banner with flash, escape banner, Replay and Exit buttons.
+ui/format.ts      fmtInt, fmtDiameter (m or km), fmtDistance (LD below 100 LD else AU), fmtKm, fmtSpeed, fmtPeriod,
+                  and the useTick(ms) re-render timer.
+scene/Scene.tsx   The <Canvas> (dpr 1..1.5, fov 50, near 0.05, far 2000, start position [0, 20, 82], background
+                  #040a16); frame loop paused while scrolled out of view (IntersectionObserver). Contains in order:
+                  SceneLights, drei Stars (3,500), CameraRig, CinematicDriver, CinematicCamera, EarthRig (Globe + Moon,
+                  moved to the Earth's heliocentric position in cinematic mode), SolarSystem, AsteroidActor,
+                  AsteroidField, OrbitTrail.
+scene/CameraRig   OrbitControls (damping 0.08; zoom 2.6..95, down to 0.35 when following); presets HOME [0, 4.5, 16],
+                  WIDE [0, 34, 62], EARTH_CLOSE [0, 1.4, 4.4] via gsap tweens; 3 s intro fly-in from [0, 20, 82];
+                  follow mode eases the target to the selected rock (k = 1 - exp(-7 dt)) and pulls to 5.5 units for
+                  1.4 s after a selection; user input cancels tweens; ClockDriver advances clock.jd.
+scene/Globe, Moon, moonTexture, AsteroidField, rockGeometry, OrbitTrail     described in 2.8-2.10.
+scene/Cinematic   CinematicDriver (time, warp, layout), SceneLights (directional light or Sun point light #fff3df),
+                  SolarSystem (Sun sphere + glow sprite, Mercury..Neptune spheres and orbit lines, fading in with w),
+                  AsteroidActor (rock, ring, trails, impact flash), CinematicCamera (auto framing). See 2.11.
+
+3.3 State management (lib/store.ts, zustand 5)
+----------------------------------------------
+Two deliberately separate kinds of state.
+(1) The zustand store `useStore` holds what should re-render the UI: data (AsteroidData), loadState, error,
+    show{impact, approaching, receding}, selected (index or -1), hover, follow, flyTick, speedIdx, lastSpeedIdx,
+    reducedMotion, viewCommand{kind, n}, cinema ("off" | "loading" | "ready" | "error"), cinemaProgress,
+    cinemaStage ("ephemeris" | "integrating"), cinemaError, cinemaEnd, cinemaNote, coverageEnd; actions setData,
+    setError, toggle, select, setHover, setFollow, setSpeedIdx, togglePause, view.
+(2) Per-frame mutable objects, read by render loops without causing React renders:
+        clock {jd}                      lib/store.ts, the simulation date (UTC Julian Date)
+        live {positions, visible, visibleCount}   lib/store.ts, newest positions for picking, follow, trail
+        cine {...}, frame {...}         lib/cinematic/state.ts, playback state and per-frame derived layout
+        coverage {start, end, loaded}   lib/coverage.ts, ephemeris range
+    HUD and cards poll them with useTick(ms) (100 ms for the HUD, 250 ms for panels).
+Selection flow: pick or search -> store.select(k) sets selected, follow = true, flyTick + 1 -> CameraRig follows, OrbitTrail
+rebuilds, InfoCard renders. Dev-only console handles (import.meta.env.DEV): window.__aw and window.__cine.
+Coverage flow: coverage.ts starts with the 2020-01-01..2100-12-31 defaults, loadCoverage() reads manifest.json (jdStart,
+jdEnd), the worker's `ready` message confirms; setCoverage() writes store.coverageEnd, which bounds the clock and date picker.
+
+3.4 Data files and their schemas
+--------------------------------
+(a) data/raw/sbdb_neo.json (10.0 MB): the raw SBDB reply {signature, fields[18], data[42,670 rows of strings], count}.
+(b) data/neo_elements.json (17.5 MB, array of 42,670): id (SBDB spkid string), name (SBDB full_name), csv_id (string or
+    null), a (AU), e, i, om, w, ma (degrees), epoch (JD TDB), per (days), moid (AU or null), H (or null), diameter_km (or
+    null), diameter_src ("sbdb" | "H_albedo0.14" | "csv_mean" | "none"), pha (bool), in_csv (bool), hazardous_csv (bool or
+    null), min_miss_distance_km_csv (km or null).
+(c) app/public/data/asteroids.json (15.6 MB, array of 42,670; the app's contract): id, name, diameter_km, pha, category
+    ("impact" | "approaching" | "receding"), min_dist_au, min_date (ISO "YYYY-MM-DDTHH:MM:SSZ"), a, e, i, om, w, ma, epoch,
+    strict_collision (bool), trend_au (= trend_au_10y), trend_au_10y, trend_au_full; plus, for 12,292 objects,
+    next_close_approach [{date, dist_au}] (at most 3, soonest first) and, for the 819 with more than 3,
+    n_close_approaches (the total). Example, Eros: {"id":"20000433","name":"433 Eros (A898 PA)","diameter_km":16.84,
+    "pha":false,"category":"approaching","min_dist_au":0.150904,"min_date":"2056-01-24T03:01:11Z","a":1.458244,
+    "e":0.222878,"i":10.8285,"om":304.268,"w":178.9181,"ma":62.5115,"epoch":2461200.5,"strict_collision":false,...}.
+    asteroids.mock.json has the same schema with random content.
+(d) data/asteroids_trajectories.json: {meta{start_jd, start_iso, end_jd, end_iso, window_days, units, helio_orbit,
+    geo_window, geo_approach, earth_orbit, selection, earth_source}, earth_orbit[180 numbers], objects[300 x {id, name,
+    category, min_dist_au, min_date, helio_orbit[180], geo_window[180], geo_approach[180]}]}. Each array is 60 xyz
+    triples in AU, ecliptic J2000, flattened. Not used by the app.
+(e) app/public/data/ephemeris/ (barycentric ecliptic J2000, AU and AU/day, JD TDB, native little-endian float64):
+    planets.bin   index ((body * count + step) * 6 + c). Body order [sun, mercury, venus, earth, mars, jupiter, saturn,
+                  uranus, neptune] (manifest main.bodies), step 0..29584 daily from JD 2458849.5, c = 0..2 position,
+                  3..5 velocity. 9 x 29,585 x 6 x 8 = 12,780,720 bytes.
+    moon.bin      index (step * 6 + c), GEOCENTRIC, step 0..59168 every 0.5 d from JD 2458849.5. 2,840,112 bytes.
+    manifest.json version, source, fetchedUtc, frame, units, auKm, cKmS, cAuDay, emrat, main{file, dtype, layout, jd0,
+                  stepDays, count, bodies}, moon{file, dtype, layout, relativeTo, jd0, stepDays, count}, gm{sun, mercury,
+                  venus, earth, moon, mars, jupiter, saturn, uranus, neptune : {au3d2, km3s2}}, radiiKm{earth, moon, sun},
+                  notes[], jdStart, jdEnd, extension{extendedUtc, baseEndJd, seamIndex, note}, validation{method, planets,
+                  moon}. File sizes must equal bodies * count * 6 * 8 (checked by ephemeris.ts and trajectory.py).
+(f) Logs: data/coverage_report.md, data/trajectory_report.md, data/raw/match_log.json {unmatched[{csv_id, name, sbdb_neo,
+    sbdb_fullname}], multi_csv_ids{spkid: [csv ids]}, drops{}}, data/raw/sbdb_alias_resolve.json {key: {spkid, neo,
+    fullname, msg}} (cache; entries with errors are retried).
+
+3.5 The "backend": offline scripts plus static files (no server, no database)
+-----------------------------------------------------------------------------
+Nothing runs on a server. All data work happens beforehand on a developer machine (Python 3.12 + numpy; no other packages,
+no requirements file) and writes static files that git stores and a static host serves. The browser does the rest. Network
+is needed only when running the scripts: JPL SBDB (query API and, for aliases, the single-object API) and JPL Horizons
+(plus the DE440 header file). Run from the repo root with `python -I` (isolated mode: ignores PYTHON* variables and user
+site-packages). Order:
+    1. python -I scripts/fetch_sbdb.py
+           -> data/raw/sbdb_neo.json                                     (SBDB; exit 2 on network failure)
+    2. python -I scripts/build_elements.py                               (needs neo_v2.csv and step 1)
+           -> data/neo_elements.json, data/coverage_report.md, data/raw/match_log.json, data/raw/sbdb_alias_resolve.json
+    3. python -I scripts/validate.py                                     checks; exit 1 on failure
+    4. python -I scripts/fetch_ephemeris.py --validate                   (Horizons; full 2020-01-01..2100-12-31 fetch)
+           -> app/public/data/ephemeris/{planets.bin, moon.bin, manifest.json}
+           other flags: --extend (only the missing span), --validate-only, --moon-only, --workers N, --cache-dir DIR,
+           --start-jd J, --days N, --moon-hours H (must divide 24)
+    5. python -I scripts/trajectory.py                                   (needs step 2; uses the step-4 tables for Earth if present)
+           -> app/public/data/asteroids.json, data/asteroids_trajectories.json, data/trajectory_report.md
+    6. python -I scripts/validate.py                                     again: now also checks the step-5 outputs
+    7. python -I scripts/test_trajectory.py
+    8. node scripts/test_nbody.mts
+When to repeat what: steps 1-2 refresh the catalogue; step 5 and the tests follow any change to elements or ephemeris; step 4
+only when the date range or Moon step changes. The analysis window is hard-coded in trajectory.py (START_JD = 2026-10-09,
+END_JD = 2100-12-31): re-running on a later day does not move the start unless those constants are edited.
+App: cd app; npm install; npm run dev (Vite default http://localhost:5173; .claude/launch.json uses port 5174); npm run build;
+npm run preview; npm run gen:mock [count] regenerates the placeholder dataset.
+
+3.6 Tests
+---------
+node scripts/test_nbody.mts      Node >= 22.18 (24.19 here), no npm dependencies; loads the TypeScript sources directly and
+                                 the ephemeris tables. 49 checks. Observed 2026-10-09: 49 passed, 0 failed, ~1 s. Covers:
+                                 IAS15 on a two-body orbit (energy, angular momentum, return to start, time reversal),
+                                 elements <-> state round trips incl. a hyperbolic case, Moon dynamics, circular Earth and
+                                 Moon orbiters, Apophis versus Horizons (states before and after the flyby, minimum distance
+                                 to 1.1e-8 AU and time to 0.2 min, 7.4 km/s, 1-minute sampling, streaming = non-streaming,
+                                 backward integration, Hermite sample interpolation), a synthetic impactor, grazer, Moon
+                                 impactor, hyperbolic escape and slow exit (look-ahead = brute force), out-of-range errors,
+                                 and table lookups versus Horizons at 2029, the 2036/37 seam, 2095 and 2100-12-30.
+python -I scripts/test_trajectory.py     numpy only. 74 checks. Observed 2026-10-09: 74 passed, 0 failed (not timed; it runs the
+                                 pipeline on small samples and loads the 42k-row JSON). Covers: window constants and the
+                                 5,424-point grid; Kepler residual; circular-orbit geometry; Earth period, radius range and
+                                 longitude; DE441 versus Standish and the hand-over code path; streaming scan versus the
+                                 generic path; Apophis (date within 3 d, distance band, refinement gain, close-approach list,
+                                 the 2068 artefact); close-approach completeness (synthetic orbit with analytic answer, brute
+                                 force on 30 low-MOID objects); the category rules on 12 hand-made cases; MOID versus SBDB;
+                                 and the output files (row counts, fields, size < 16 MB, rule consistency for every row,
+                                 close-approach lists, trajectories file, report text).
+python -I scripts/validate.py    Observed: ALL CHECKS PASSED (neo_elements, asteroids.json, asteroids_trajectories.json).
+Type check: npx tsc -p app/tsconfig.app.json --noEmit (npm run build runs tsc -b first). Observed: no errors.
+No automated tests exist for the React/three.js UI.
+
+3.7 Build and deploy
+--------------------
+Stack (app/package.json): react and react-dom 19.2, three 0.185, @react-three/fiber 9.7, @react-three/drei 10.7, gsap 3.15, zustand
+5.0; dev: vite 8.2, @vitejs/plugin-react 6.1, typescript ~6.0, @types/*. tsconfig: strict, noUnusedLocals/Parameters,
+verbatimModuleSyntax, erasableSyntaxOnly, allowImportingTsExtensions (the nbody files import "./x.ts").
+vite.config.ts: React plugin; define __HAS_MOON_TEXTURE__ (true only if public/moon.jpg exists); worker format "es" (keplerWorker.ts
+and nbody/nbody.worker.ts become separate chunks); plugin drop-mock-data deletes dist/data/asteroids.mock.json when the real
+asteroids.json is present.
+Commands in app/: npm install; npm run dev; npm run build (= tsc -b && vite build, output app/dist/); npm run preview.
+Last build seen (dist/, before compression): Scene chunk 645 KB (three.js, r3f, drei), main chunk 636 KB, nbody.worker 23 KB,
+keplerWorker 1.5 KB, CSS 14 KB, plus data/asteroids.json 15.6 MB, data/ephemeris/* 15.6 MB, earth.jpg 224 KB.
+Git: origin https://github.com/MendhiVadi/asteroid-watch.git, local main tracks origin/main, one commit (68b05aa "Asteroid Watch:
+3D NEO dashboard with N-body cinematic mode"); the ephemeris extension, regenerated data and several source edits are
+uncommitted (git status). I did not check what is on GitHub.
+Vercel (planned, per the project brief; no vercel.json or other config in the repo): import the GitHub repo as a static site with
+Framework preset Vite, Root Directory `app`, Install `npm install`, Build `npm run build`, Output `dist`. No functions, no
+environment variables. The app fetches /data/asteroids.json and /data/ephemeris/* at runtime; they are plain static assets (text
+compresses well, the Float64 .bin files less so). I did not verify that a Vercel project exists or was deployed.
+
+3.8 Glossary
+------------
+AU            astronomical unit, 149,597,870.7 km, about Earth-Sun distance.
+LD            lunar distance, 384,399 km = 0.00256955 AU.
+Ecliptic      plane of Earth's orbit around the Sun; J2000 = the frame fixed at the year-2000 equinox.
+Julian Date   continuous day count; JD 2451545.0 = 2000-01-01 12:00.
+UTC, TT, TDB  civil time; terrestrial time (UTC + 69.184 s now); barycentric dynamical time (TT within 2 ms), used by JPL.
+Osculating    "kissing": the Kepler ellipse that matches position and velocity at one instant (the epoch).
+Elements      a, e, i, Om, w, M0 (1.2). Perihelion/aphelion: closest/farthest point from the Sun.
+Mean, eccentric, true anomaly   three angles locating a body on its orbit: uniform clock angle, auxiliary-circle angle, real angle.
+Kepler's equation   M = E - e sin E, links mean and eccentric anomaly. Newton-Raphson/Halley: iterative root finders.
+NEO           near-Earth object: perihelion below 1.3 AU. PHA: potentially hazardous asteroid (MOID <= 0.05 AU and H <= 22,
+              flagged by JPL). MOID: minimum orbit intersection distance (1.9).
+H, albedo     absolute magnitude (brightness at standard geometry); fraction of light reflected. D = 1329/sqrt(p) * 10^(-H/5).
+SBDB          JPL Small-Body Database (orbits, sizes). Horizons: JPL ephemeris service (positions of planets, moons, asteroids).
+DE440/DE441   JPL planetary ephemerides (numerical models of the solar system).
+Barycentre    centre of mass; EMB = Earth-Moon barycentre (~4,671 km from Earth's centre).
+Hill sphere   region where a planet's gravity dominates the Sun's; ~0.01 AU for Earth.
+Close approach, flyby, perigee    time and distance of least separation from Earth; perigee measured to Earth's centre.
+Gravitational focusing   Earth's pull bends a passing body inward, so the true perigee is smaller than the straight-line miss.
+Two-body model   only Sun and asteroid considered (a Kepler ellipse). N-body: all significant masses included. Point mass: a
+              body treated as having no size or shape. 1PN: first post-Newtonian relativistic correction.
+Yarkovsky     tiny thrust from anisotropic thermal re-radiation of sunlight, which slowly changes an asteroid's orbit.
+IAS15, Gauss-Radau   the integrator and the node set it uses (1.14). Kahan summation: error-compensated addition.
+Hermite interpolation   cubic curve through two points matching their velocities (1.13).
+Instanced mesh   one GPU draw call for many copies of a shape. Web worker: a background thread. Transferable: a buffer handed to
+              another thread without copying. Double buffering: two buffers alternate between writer and reader.
+Typed array   fixed-type numeric array (Float32Array, Float64Array) for fast numeric work in JavaScript.
+Time warp     slowing playback automatically when something interesting happens (2.11).
+
+3.9 Not verified / open items
+-----------------------------
+- Browser behaviour: I did not run the app in a browser, so frame rate, visual correctness, picking feel and the camera director are
+  described from code, not observed.
+- GitHub and Vercel: remote contents and any deployment were not checked.
+- Land Dispute: only Globe.tsx was re-read; the original lights, background and camera values (2.10) come from the project plan.
+- Standish coefficients and DE440 GM values are as typed in the code and manifest; I checked them for internal consistency
+  (kepler.ts versus trajectory.py), not against the JPL web pages (offline).
+- The CSV relative_velocity unit; the JPL table of the Earth rate in cinematic/ephemeris.ts PLANETS (2.12 item 13).
+- Performance claims (about an hour for 42,670 N-body runs; 60 fps) are estimates or goals, not measurements.
+- Accuracy of the N-body start for the 5,297 old-epoch objects was tested only for Apophis (1987 epoch).
+- The tree was still being edited while this was written (0.3); numbers come from the files as they were at the last check.
+
