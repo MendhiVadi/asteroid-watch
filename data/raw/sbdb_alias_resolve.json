@@ -1,0 +1,488 @@
+{
+ "2020 RX8": {
+  "spkid": "50724244",
+  "neo": true,
+  "fullname": "(2015 ME131 = 2020 RX8)",
+  "msg": null
+ },
+ "2020 QO4": {
+  "spkid": "54132120",
+  "neo": true,
+  "fullname": "(2010 PC73 = 2020 QO4)",
+  "msg": null
+ },
+ "2022 CL12": {
+  "spkid": "54250323",
+  "neo": false,
+  "fullname": "(2022 CL12)",
+  "msg": null
+ },
+ "2001 DC77": {
+  "spkid": "50076660",
+  "neo": false,
+  "fullname": "(2001 DC77)",
+  "msg": null
+ },
+ "2022 DD5": {
+  "spkid": "54249331",
+  "neo": false,
+  "fullname": "(2022 DD5)",
+  "msg": null
+ },
+ "2013 ET": {
+  "spkid": "50092353",
+  "neo": true,
+  "fullname": "(2001 SY169 = 2013 ET)",
+  "msg": null
+ },
+ "2021 FQ1": {
+  "spkid": "54133139",
+  "neo": true,
+  "fullname": "(2002 FO7 = 2021 FQ1)",
+  "msg": null
+ },
+ "2022 CV2": {
+  "spkid": "54247545",
+  "neo": true,
+  "fullname": "(2016 FH60 = 2022 CV2)",
+  "msg": null
+ },
+ "2020 UJ7": {
+  "spkid": "50076797",
+  "neo": true,
+  "fullname": "(2001 GP2 = 2020 UJ7)",
+  "msg": null
+ },
+ "2020 OB6": {
+  "spkid": "50661519",
+  "neo": true,
+  "fullname": "(2014 CH13 = 2020 OB6)",
+  "msg": null
+ },
+ "2002 EH1": {
+  "spkid": "50137797",
+  "neo": false,
+  "fullname": "(2002 EH1)",
+  "msg": null
+ },
+ "2020 SO": {
+  "spkid": null,
+  "neo": null,
+  "fullname": null,
+  "msg": "specified object was not found"
+ },
+ "2021 RV16": {
+  "spkid": "50092165",
+  "neo": true,
+  "fullname": "(1995 UC2 = 2021 RV16)",
+  "msg": null
+ },
+ "2021 MB2": {
+  "spkid": "54180389",
+  "neo": true,
+  "fullname": "(2010 BV132 = 2021 MB2)",
+  "msg": null
+ },
+ "2022 EQ4": {
+  "spkid": "54253551",
+  "neo": false,
+  "fullname": "(2022 EQ4)",
+  "msg": null
+ },
+ "2021 HS": {
+  "spkid": "1003811",
+  "neo": true,
+  "fullname": "P/2021 HS (PANSTARRS)",
+  "msg": null
+ },
+ "2010 PW58": {
+  "spkid": "54114211",
+  "neo": true,
+  "fullname": "(2010 KD149 = 2010 PW58)",
+  "msg": null
+ },
+ "2005 UK5": {
+  "spkid": "50297378",
+  "neo": false,
+  "fullname": "(2005 UK5)",
+  "msg": null
+ },
+ "2005 SR9": {
+  "spkid": "50291249",
+  "neo": false,
+  "fullname": "(2005 SR9)",
+  "msg": null
+ },
+ "2006 CV9": {
+  "spkid": "20849638",
+  "neo": false,
+  "fullname": "849638 (2006 CV9)",
+  "msg": null
+ },
+ "2006 VB3": {
+  "spkid": "50358249",
+  "neo": false,
+  "fullname": "(2006 VB3)",
+  "msg": null
+ },
+ "2007 BB50": {
+  "spkid": "50367175",
+  "neo": false,
+  "fullname": "(2007 BB50)",
+  "msg": null
+ },
+ "2016 FZ14": {
+  "spkid": "54148940",
+  "neo": true,
+  "fullname": "(2010 NT81 = 2016 FZ14)",
+  "msg": null
+ },
+ "2021 UU30": {
+  "spkid": "54219802",
+  "neo": true,
+  "fullname": "(2007 VB70 = 2021 UU30)",
+  "msg": null
+ },
+ "2009 PN": {
+  "spkid": "50465697",
+  "neo": false,
+  "fullname": "(2009 PN)",
+  "msg": null
+ },
+ "2022 DE2": {
+  "spkid": "50771615",
+  "neo": true,
+  "fullname": "(2017 DA120 = 2022 DE2)",
+  "msg": null
+ },
+ "2010 GJ23": {
+  "spkid": "50515401",
+  "neo": false,
+  "fullname": "(2010 GJ23)",
+  "msg": null
+ },
+ "2010 FP": {
+  "spkid": "50512303",
+  "neo": false,
+  "fullname": "(2010 FP)",
+  "msg": null
+ },
+ "2021 GW9": {
+  "spkid": "50588557",
+  "neo": true,
+  "fullname": "(2011 WK14 = 2021 GW9)",
+  "msg": null
+ },
+ "1999 HW1": {
+  "spkid": "50020972",
+  "neo": false,
+  "fullname": "(1999 HW1)",
+  "msg": null
+ },
+ "2020 LC1": {
+  "spkid": "50841639",
+  "neo": true,
+  "fullname": "(2019 HF3 = 2020 LC1)",
+  "msg": null
+ },
+ "2020 XY3": {
+  "spkid": "54145586",
+  "neo": true,
+  "fullname": "(2010 LE152 = 2020 XY3)",
+  "msg": null
+ },
+ "2021 AS7": {
+  "spkid": "54161072",
+  "neo": true,
+  "fullname": "(2010 FY103 = 2021 AS7)",
+  "msg": null
+ },
+ "2015 JF11": {
+  "spkid": "50720903",
+  "neo": false,
+  "fullname": "(2015 JF11)",
+  "msg": null
+ },
+ "2011 WK2": {
+  "spkid": "50588081",
+  "neo": false,
+  "fullname": "(2011 WK2)",
+  "msg": null
+ },
+ "2012 GM11": {
+  "spkid": "50602621",
+  "neo": false,
+  "fullname": "(2012 GM11)",
+  "msg": null
+ },
+ "2021 AD7": {
+  "spkid": "54106000",
+  "neo": false,
+  "fullname": "(2021 AD7)",
+  "msg": null
+ },
+ "2021 CQ3": {
+  "spkid": "54123434",
+  "neo": true,
+  "fullname": "(2016 LS51 = 2021 CQ3)",
+  "msg": null
+ },
+ "2012 UW27": {
+  "spkid": "50612863",
+  "neo": false,
+  "fullname": "(2012 UW27)",
+  "msg": null
+ },
+ "2018 HT3": {
+  "spkid": "1003925",
+  "neo": true,
+  "fullname": "463P/NEOWISE (2018 HT3)",
+  "msg": null
+ },
+ "2019 AY14": {
+  "spkid": "50838030",
+  "neo": false,
+  "fullname": "(2019 AY14)",
+  "msg": null
+ },
+ "2016 LF51": {
+  "spkid": "50754338",
+  "neo": false,
+  "fullname": "(2016 LF51)",
+  "msg": null
+ },
+ "2017 SD33": {
+  "spkid": "50781981",
+  "neo": false,
+  "fullname": "(2017 SL18 = 2017 SD33)",
+  "msg": null
+ },
+ "2017 XV2": {
+  "spkid": "50791324",
+  "neo": false,
+  "fullname": "(2017 XV2)",
+  "msg": null
+ },
+ "2018 FH5": {
+  "spkid": "50802124",
+  "neo": false,
+  "fullname": "(2018 FH5)",
+  "msg": null
+ },
+ "2013 NU": {
+  "spkid": "50644726",
+  "neo": false,
+  "fullname": "(2013 NU)",
+  "msg": null
+ },
+ "2014 JP34": {
+  "spkid": "20660166",
+  "neo": false,
+  "fullname": "660166 (1999 TN337 = 2014 JP34)",
+  "msg": null
+ },
+ "2015 CV12": {
+  "spkid": "50710181",
+  "neo": false,
+  "fullname": "(2015 CV12)",
+  "msg": null
+ },
+ "2015 CG62": {
+  "spkid": "50709977",
+  "neo": false,
+  "fullname": "(2015 CV = 2015 CG62)",
+  "msg": null
+ },
+ "2020 YN4": {
+  "spkid": "50557559",
+  "neo": true,
+  "fullname": "(2011 CL50 = 2020 YN4)",
+  "msg": null
+ },
+ "2019 PR": {
+  "spkid": "50338022",
+  "neo": true,
+  "fullname": "(2006 PF1 = 2019 PR)",
+  "msg": null
+ },
+ "2019 UH87": {
+  "spkid": "20011885",
+  "neo": true,
+  "fullname": "11885 Summanus (1990 SS = 2019 UH87)",
+  "msg": null
+ },
+ "2020 BR7": {
+  "spkid": "50626051",
+  "neo": true,
+  "fullname": "(2013 CV32 = 2020 BR7)",
+  "msg": null
+ },
+ "2022 BD3": {
+  "spkid": "50519539",
+  "neo": true,
+  "fullname": "(2010 HW81 = 2022 BD3)",
+  "msg": null
+ },
+ "2017 FQ90": {
+  "spkid": "50772777",
+  "neo": false,
+  "fullname": "(2017 FQ90)",
+  "msg": null
+ },
+ "2020 JS1": {
+  "spkid": "54017158",
+  "neo": true,
+  "fullname": "(2020 KN2 = 2020 JS1)",
+  "msg": null
+ },
+ "2020 JS15": {
+  "spkid": "54046598",
+  "neo": false,
+  "fullname": "(2020 JS15)",
+  "msg": null
+ },
+ "2014 LW21": {
+  "spkid": "50673704",
+  "neo": false,
+  "fullname": "(2014 LW21)",
+  "msg": null
+ },
+ "2020 PD7": {
+  "spkid": "54051422",
+  "neo": false,
+  "fullname": "(2020 PD7)",
+  "msg": null
+ },
+ "2020 SH1": {
+  "spkid": "50634966",
+  "neo": true,
+  "fullname": "(2013 HL = 2020 SH1)",
+  "msg": null
+ },
+ "2020 XA1": {
+  "spkid": null,
+  "neo": null,
+  "fullname": null,
+  "msg": "specified object was not found"
+ },
+ "2020 VG5": {
+  "spkid": "54087836",
+  "neo": false,
+  "fullname": "(2020 VG5)",
+  "msg": null
+ },
+ "2021 AN7": {
+  "spkid": "20796734",
+  "neo": true,
+  "fullname": "796734 (2010 RP45 = 2021 AN7)",
+  "msg": null
+ },
+ "2021 AC5": {
+  "spkid": "54100282",
+  "neo": false,
+  "fullname": "(2020 XU5 = 2021 AC5)",
+  "msg": null
+ },
+ "2020 XU5": {
+  "spkid": "54100282",
+  "neo": false,
+  "fullname": "(2020 XU5)",
+  "msg": null
+ },
+ "2021 AD2": {
+  "spkid": "50152342",
+  "neo": true,
+  "fullname": "(2003 GS22 = 2021 AD2)",
+  "msg": null
+ },
+ "2021 HW2": {
+  "spkid": "54147131",
+  "neo": true,
+  "fullname": "(2021 HY9 = 2021 HW2)",
+  "msg": null
+ },
+ "2021 RJ1": {
+  "spkid": "54194340",
+  "neo": true,
+  "fullname": "(2021 RN5 = 2021 RJ1)",
+  "msg": null
+ },
+ "2021 WF": {
+  "spkid": "20884829",
+  "neo": true,
+  "fullname": "884829 (2017 WK13 = 2021 WF)",
+  "msg": null
+ },
+ "2021 TU9": {
+  "spkid": "50782089",
+  "neo": true,
+  "fullname": "(2017 TH1 = 2021 TU9)",
+  "msg": null
+ },
+ "2021 NL2": {
+  "spkid": "20696513",
+  "neo": true,
+  "fullname": "696513 (2016 NL56 = 2021 NL2)",
+  "msg": null
+ },
+ "2021 TQ": {
+  "spkid": "50348169",
+  "neo": true,
+  "fullname": "(2006 TO = 2021 TQ)",
+  "msg": null
+ },
+ "2021 SO5": {
+  "spkid": "50394099",
+  "neo": true,
+  "fullname": "(2007 VD138 = 2021 SO5)",
+  "msg": null
+ },
+ "2021 RY2": {
+  "spkid": "54219798",
+  "neo": true,
+  "fullname": "(2005 BU6 = 2021 RY2)",
+  "msg": null
+ },
+ "2022 DO": {
+  "spkid": "50405639",
+  "neo": true,
+  "fullname": "(2008 EU68 = 2022 DO)",
+  "msg": null
+ },
+ "2022 BJ9": {
+  "spkid": "54245575",
+  "neo": false,
+  "fullname": "(2022 BJ9)",
+  "msg": null
+ },
+ "2021 VD5": {
+  "spkid": "54221661",
+  "neo": true,
+  "fullname": "(2001 KY18 = 2021 VD5)",
+  "msg": null
+ },
+ "518426 (2002 ON4)": {
+  "spkid": null,
+  "neo": null,
+  "fullname": null,
+  "msg": "ERR <HTTPError 400: 'Bad Request'>"
+ },
+ "217683 (1999 RP36)": {
+  "spkid": null,
+  "neo": null,
+  "fullname": null,
+  "msg": "ERR <HTTPError 400: 'Bad Request'>"
+ },
+ "38091 (1999 JT3)": {
+  "spkid": null,
+  "neo": null,
+  "fullname": null,
+  "msg": "ERR <HTTPError 400: 'Bad Request'>"
+ },
+ "477885 (2011 JT9)": {
+  "spkid": null,
+  "neo": null,
+  "fullname": null,
+  "msg": "ERR <HTTPError 400: 'Bad Request'>"
+ }
+}
