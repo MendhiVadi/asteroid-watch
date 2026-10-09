@@ -41,6 +41,10 @@ interface State {
   cinemaEnd: string | null;
   /** Informational note shown in the cinematic HUD (clamped start date, early stop...). */
   cinemaNote: string | null;
+  /** What the loading state is waiting on. */
+  cinemaStage: "ephemeris" | "integrating";
+  /** Last JD of the ephemeris coverage (simulation range end); drives date limits in the UI. */
+  coverageEnd: number;
   setData: (data: AsteroidData) => void;
   setError: (message: string) => void;
   toggle: (cat: Category) => void;
@@ -70,6 +74,8 @@ export const useStore = create<State>((set, get) => ({
   cinemaError: null,
   cinemaEnd: null,
   cinemaNote: null,
+  cinemaStage: "ephemeris",
+  coverageEnd: 2488433.5,
   setData: (data) => set({ data, loadState: "ready", error: null }),
   setError: (message) => set({ loadState: "error", error: message }),
   toggle: (cat) =>

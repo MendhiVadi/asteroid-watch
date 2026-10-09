@@ -22,6 +22,15 @@ export interface Asteroid {
   strict_collision?: boolean;
   /** Change of Earth distance over the analysis window, AU (negative = closing). */
   trend_au?: number;
+  trend_au_10y?: number;
+  trend_au_full?: number;
+  /** Upcoming Earth close approaches (up to 3), soonest first. */
+  next_close_approach?: CloseApproach[];
+}
+
+export interface CloseApproach {
+  date: string;
+  dist_au: number;
 }
 
 export interface AsteroidData {
@@ -60,6 +69,16 @@ function markerSize(diameterKm: number): number {
   return 0.034 + 0.058 * Math.log10(1 + d * 100);
 }
 
+function parseApproaches(v: unknown): CloseApproach[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: CloseApproach[] = [];
+  for (const x of v as Record<string, unknown>[]) {
+    const dist = Number(x?.dist_au);
+    if (typeof x?.date === "string" && Number.isFinite(dist)) out.push({ date: x.date, dist_au: dist });
+  }
+  return out.length ? out.slice(0, 3) : undefined;
+}
+
 function normalise(raw: unknown): Asteroid[] {
   const rows = Array.isArray(raw) ? raw : (raw as { asteroids?: unknown })?.asteroids;
   if (!Array.isArray(rows)) throw new Error("asteroid data is not an array");
@@ -81,6 +100,9 @@ function normalise(raw: unknown): Asteroid[] {
       a, e, i, om, w, ma, epoch,
       strict_collision: r.strict_collision === undefined ? undefined : Boolean(r.strict_collision),
       trend_au: Number.isFinite(Number(r.trend_au)) ? Number(r.trend_au) : undefined,
+      trend_au_10y: Number.isFinite(Number(r.trend_au_10y)) ? Number(r.trend_au_10y) : undefined,
+      trend_au_full: Number.isFinite(Number(r.trend_au_full)) ? Number(r.trend_au_full) : undefined,
+      next_close_approach: parseApproaches(r.next_close_approach),
     });
   }
   if (out.length === 0) throw new Error("no valid asteroid rows");

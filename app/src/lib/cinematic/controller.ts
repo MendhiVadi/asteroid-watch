@@ -5,7 +5,8 @@ import { jdTdbFromUnixMs, unixMsFromJdTdb } from "../nbody/constants";
 import type { NBodyError } from "../nbody/client";
 import type { TrajectoryArrays } from "../nbody/trajectory";
 import type { SimEvent, SimSummary } from "../nbody/sim";
-import { coverage, getClient, loadMainEphemeris, ready } from "./engine";
+import { coverage, jdToDateString } from "../coverage";
+import { getClient, loadMainEphemeris, ready } from "./engine";
 import { toWide } from "./ephemeris";
 import { cine, frame, type Trajectory, type ViewMode } from "./state";
 
@@ -90,7 +91,7 @@ function describe(err: unknown): { message: string; code?: string } {
   if (e?.code === "OUT_OF_COVERAGE") {
     return {
       code: e.code,
-      message: "That date is outside the ephemeris coverage (2020-01-01 to 2036-12-31). Pick a date inside it.",
+      message: `That date is outside the ephemeris coverage (${jdToDateString(coverage.start)} to ${jdToDateString(coverage.end)}). Pick a date inside it.`,
     };
   }
   return { code: e?.code, message: err instanceof Error ? err.message : String(err) };
@@ -121,7 +122,7 @@ export async function startCinema(index: number): Promise<void> {
     cine.active = false;
     cine.traj = null;
   }
-  useStore.setState({ cinema: "loading", cinemaProgress: 0, cinemaError: null, cinemaEnd: null, cinemaNote: null });
+  useStore.setState({ cinema: "loading", cinemaProgress: 0, cinemaError: null, cinemaEnd: null, cinemaNote: null, cinemaStage: "ephemeris" });
 
   let cov: [number, number];
   try {
@@ -131,13 +132,14 @@ export async function startCinema(index: number): Promise<void> {
     return;
   }
   if (token !== runToken) return;
+  useStore.setState({ cinemaStage: "integrating" });
 
   // Start at the app's current simulation date, clamped into the ephemeris coverage.
   const wanted = toTdb(clock.jd);
   const tStart = Math.min(Math.max(wanted, cov[0] + 0.5), cov[1] - 30);
   const note =
     Math.abs(tStart - wanted) > 1e-6
-      ? "Start date was moved into the ephemeris coverage (2020-01-01 to 2036-12-31)."
+      ? `Start date was moved into the ephemeris coverage (${jdToDateString(cov[0])} to ${jdToDateString(cov[1])}).`
       : null;
 
   const a = data.list[index];
@@ -212,7 +214,7 @@ function finish(tr: Trajectory, summary: SimSummary) {
 export function exitCinema(): void {
   runToken++;
   cancelJob();
-  if (cine.active) clock.jd = Math.min(Math.max(fromTdb(cine.t), fromTdb(coverage[0])), fromTdb(coverage[1]));
+  if (cine.active) clock.jd = Math.min(Math.max(fromTdb(cine.t), fromTdb(coverage.start)), fromTdb(coverage.end));
   cine.active = false;
   cine.traj = null;
   useStore.setState({ cinema: "off", cinemaEnd: null, cinemaError: null, cinemaNote: null });
@@ -251,5 +253,5 @@ export function setView(view: ViewMode): void {
 
 // Dev-only handle for poking at the running app from the console.
 if (import.meta.env.DEV) {
-  (window as unknown as { __cine: unknown }).__cine = { cine, frame, startCinema, exitCinema, toTdb, fromTdb };
+  (window as unknown as { __cine: unknown }).__cine = { cine, frame, startCinema, exitCinema, toTdb, fromTdb, getClient, ready };
 }

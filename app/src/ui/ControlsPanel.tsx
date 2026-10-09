@@ -3,9 +3,8 @@ import { CATEGORIES, type Category } from "../lib/data";
 import { CATEGORY_COLOR } from "../lib/colors";
 import { clock, PAUSED_INDEX, SPEEDS, useStore } from "../lib/store";
 import { jdFromMs, msFromJd } from "../lib/kepler";
+import { clampClock, clockRange, jdToDateString } from "../lib/coverage";
 
-// Ephemeris coverage (2020-01-01 .. 2036-12-31), also the range cinematic mode can simulate.
-const COVERAGE_UTC: [number, number] = [2458849.5, 2465058.5];
 import { fmtDiameter, fmtInt, fmtSpeed, useTick } from "./format";
 
 const CATEGORY_INFO: Record<Category, { label: string; sub: string }> = {
@@ -107,6 +106,7 @@ function Search() {
 }
 
 function TimeControls() {
+  useStore((s) => s.coverageEnd);
   const speedIdx = useStore((s) => s.speedIdx);
   const setSpeedIdx = useStore((s) => s.setSpeedIdx);
   const togglePause = useStore((s) => s.togglePause);
@@ -140,15 +140,15 @@ function TimeControls() {
           <input
             type="date"
             aria-label="Jump to date"
-            min="2020-01-01"
-            max="2036-12-31"
+            min={jdToDateString(clockRange()[0])}
+            max={jdToDateString(clockRange()[1])}
             value={date}
             onChange={(e) => {
               const ms = Date.parse(`${e.target.value}T00:00:00Z`);
-              if (Number.isFinite(ms)) clock.jd = Math.min(Math.max(jdFromMs(ms), COVERAGE_UTC[0]), COVERAGE_UTC[1]);
+              if (Number.isFinite(ms)) clock.jd = clampClock(jdFromMs(ms));
             }}
           />
-          <button type="button" className="link-btn" onClick={() => (clock.jd = jdFromMs(Date.now()))}>
+          <button type="button" className="link-btn" onClick={() => (clock.jd = clampClock(jdFromMs(Date.now())))}>
             Now
           </button>
         </span>
@@ -158,6 +158,7 @@ function TimeControls() {
 }
 
 export function ControlsPanel() {
+  useStore((s) => s.coverageEnd); // re-render when the ephemeris coverage is read
   const data = useStore((s) => s.data);
   const show = useStore((s) => s.show);
   const view = useStore((s) => s.view);
@@ -175,7 +176,7 @@ export function ControlsPanel() {
           {CATEGORIES.map((c) => (
             <Toggle key={c} cat={c} />
           ))}
-          <p className="toggle-note">Categories are computed for the 2026-10-09 to 2036 window.</p>
+          <p className="toggle-note">Categories are computed for the {jdToDateString(clockRange()[0])} to {jdToDateString(clockRange()[1])} window.</p>
         </div>
         <Search />
         <TimeControls />

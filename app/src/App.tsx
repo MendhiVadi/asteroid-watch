@@ -3,6 +3,7 @@ import { loadAsteroids } from "./lib/data";
 import { PAUSED_INDEX, useStore } from "./lib/store";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { disposeEngine } from "./lib/cinematic/engine";
+import { loadCoverage } from "./lib/coverage";
 import { HeroContent } from "./ui/HeroContent";
 import { ControlsPanel } from "./ui/ControlsPanel";
 import { InfoCard } from "./ui/InfoCard";
@@ -49,7 +50,10 @@ export default function App() {
     return () => media.removeEventListener("change", apply);
   }, []);
 
-  useEffect(() => () => disposeEngine(), []);
+  useEffect(() => {
+    void loadCoverage();
+    return () => disposeEngine();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

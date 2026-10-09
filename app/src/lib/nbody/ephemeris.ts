@@ -2,10 +2,13 @@
 // written by scripts/fetch_ephemeris.py.  Pure data + maths, no DOM / node APIs.
 //
 // Interpolation: cubic Hermite on (position, velocity) node pairs.
-//   planets : 1-day nodes, Float64.  Worst-case Earth error is a few tens of metres
-//             (dominated by the monthly lunar wobble of the Earth about the EMB).
-//   moon    : stored geocentric on 2-hour nodes (Float64); barycentric Moon =
-//             Earth(t) + MoonRel(t).
+//   planets : 1-day nodes, Float64.  Worst-case Earth error is ~0.1 km (measured vs Horizons, see the
+//             manifest 'validation' block; dominated by the monthly lunar wobble of the Earth about the EMB).
+//   moon    : stored geocentric on nodes spaced manifest.moon.stepDays apart (Float64; any step is
+//             handled - currently 12 h, ~0.3 km worst-case position error vs Horizons, see the
+//             manifest 'validation' block); barycentric Moon = Earth(t) + MoonRel(t).
+//
+// Coverage is whatever the manifest says (currently 2020-01-01 .. 2100-12-31, JD 2458849.5 .. 2488433.5).
 
 export interface EphemerisManifest {
   version: number;
@@ -84,6 +87,9 @@ export class Ephemeris {
     this.moonT0 = manifest.moon.jd0 - manifest.main.jd0;
     this.moonStep = manifest.moon.stepDays;
     if (manifest.main.stepDays !== 1) throw new Error('ephemeris: expected 1-day planetary nodes');
+    if (!(this.moonStep > 0 && this.moonStep <= 1) || this.nMoon < 2 || this.nMain < 2) {
+      throw new Error(`ephemeris: bad moon grid (step ${this.moonStep} d, ${this.nMoon} nodes)`);
+    }
     if (this.main.length !== manifest.main.bodies.length * this.nMain * 6) {
       throw new Error('ephemeris: planets.bin size does not match manifest');
     }
@@ -234,7 +240,7 @@ export class Ephemeris {
     hermite6(this.main, mi * this.nMain * 6 + i * 6, u - i, 1, out);
   }
 
-  /** Geocentric Moon state (2-hour Hermite). */
+  /** Geocentric Moon state (cubic Hermite on the manifest's moon grid, e.g. 12-hour nodes). */
   moonRelState(t: number, out: Float64Array): void {
     const u = (t - this.moonT0) / this.moonStep;
     if (!(u >= 0 && u <= this.nMoon - 1)) throw new RangeError(`ephemeris: t=${t} outside coverage`);
@@ -272,10 +278,13 @@ function hermite6(tab: Float64Array | Float32Array, base: number, s: number, h: 
 /** Load an Ephemeris from a base URL (works in the main thread and in workers). */
 export async function loadEphemeris(baseUrl = '/data/ephemeris/'): Promise<Ephemeris> {
   const base = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
-  const mRes = await fetch(base + 'manifest.json');
+  const mRes = await fetch(base + 'manifest.json', { cache: 'no-cache' });
   if (!mRes.ok) throw new Error(`ephemeris manifest: HTTP ${mRes.status}`);
   const manifest = (await mRes.json()) as EphemerisManifest;
-  const [pRes, lRes] = await Promise.all([fetch(base + manifest.main.file), fetch(base + manifest.moon.file)]);
+  // The query string is ignored by static hosts but changes whenever the grids change, so a stale cached .bin
+  // can never be paired with a newer manifest.
+  const v = `?v=${manifest.main.count}-${manifest.moon.count}-${manifest.moon.stepDays}`;
+  const [pRes, lRes] = await Promise.all([fetch(base + manifest.main.file + v), fetch(base + manifest.moon.file + v)]);
   if (!pRes.ok || !lRes.ok) throw new Error(`ephemeris binaries: HTTP ${pRes.status}/${lRes.status}`);
   const [p, l] = await Promise.all([pRes.arrayBuffer(), lRes.arrayBuffer()]);
   return new Ephemeris(manifest, p, l);
