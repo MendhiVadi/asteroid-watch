@@ -1,0 +1,96 @@
+{
+ "version": 1,
+ "source": "JPL Horizons VECTORS (DE441); constants from JPL DE440 header",
+ "fetchedUtc": "2026-10-09T05:02:14Z",
+ "frame": "ICRF axes, J2000 ecliptic plane; barycentric (SSB) unless noted",
+ "units": {
+  "length": "AU",
+  "velocity": "AU/day",
+  "time": "JD (TDB)",
+  "gm": "AU^3/day^2"
+ },
+ "auKm": 149597870.7,
+ "cKmS": 299792.458,
+ "cAuDay": 173.1446326742403,
+ "emrat": 81.30056822149722,
+ "main": {
+  "file": "planets.bin",
+  "dtype": "float64",
+  "layout": "[body][step][x,y,z,vx,vy,vz]",
+  "jd0": 2458849.5,
+  "stepDays": 1.0,
+  "count": 6210,
+  "bodies": [
+   "sun",
+   "mercury",
+   "venus",
+   "earth",
+   "mars",
+   "jupiter",
+   "saturn",
+   "uranus",
+   "neptune"
+  ]
+ },
+ "moon": {
+  "file": "moon.bin",
+  "dtype": "float64",
+  "layout": "[step][x,y,z,vx,vy,vz]",
+  "relativeTo": "earth",
+  "jd0": 2458849.5,
+  "stepDays": 0.08333333333333333,
+  "count": 74509
+ },
+ "gm": {
+  "sun": {
+   "au3d2": 0.00029591220828411956,
+   "km3s2": 132712440041.27942
+  },
+  "mercury": {
+   "au3d2": 4.912500194889318e-11,
+   "km3s2": 22031.868551400003
+  },
+  "venus": {
+   "au3d2": 7.243452332644119e-10,
+   "km3s2": 324858.592
+  },
+  "earth": {
+   "au3d2": 8.887692446707102e-10,
+   "km3s2": 398600.43550702254
+  },
+  "moon": {
+   "au3d2": 1.093189462402435e-11,
+   "km3s2": 4902.80011845755
+  },
+  "mars": {
+   "au3d2": 9.549548829725812e-11,
+   "km3s2": 42828.3758157561
+  },
+  "jupiter": {
+   "au3d2": 2.825345825225792e-07,
+   "km3s2": 126712764.09999998
+  },
+  "saturn": {
+   "au3d2": 8.45970599337629e-08,
+   "km3s2": 37940584.8418
+  },
+  "uranus": {
+   "au3d2": 1.29202656496824e-08,
+   "km3s2": 5794556.3999999985
+  },
+  "neptune": {
+   "au3d2": 1.524357347885194e-08,
+   "km3s2": 6836527.100580399
+  }
+ },
+ "radiiKm": {
+  "earth": 6371.0,
+  "moon": 1737.4,
+  "sun": 695700.0
+ },
+ "notes": [
+  "mars/jupiter/saturn/uranus/neptune are system barycentres; their GM includes satellites.",
+  "earth and moon are separate bodies; moon.bin is stored relative to earth (Float64; Float32 gave interpolation jerk that limits step size near the Moon).",
+  "No minor-planet perturbers (Ceres, Vesta, Pallas ...) and no Pluto are included."
+ ]
+}
