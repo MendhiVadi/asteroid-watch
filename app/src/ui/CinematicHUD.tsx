@@ -34,15 +34,20 @@ function Overlays() {
   const progress = useStore((s) => s.cinemaProgress);
   const error = useStore((s) => s.cinemaError);
   const end = useStore((s) => s.cinemaEnd);
+  const stage = useStore((s) => s.cinemaStage);
 
   if (phase === "loading")
     return (
       <div className="cine-center" role="status">
-        <p className="cine-title">Simulating trajectory</p>
-        <div className="cine-bar">
-          <i style={{ width: `${Math.round(progress * 100)}%` }} />
+        <p className="cine-title">{stage === "ephemeris" ? "Loading ephemeris" : "Simulating trajectory"}</p>
+        <div className={`cine-bar${stage === "ephemeris" ? " cine-bar--busy" : ""}`}>
+          <i style={{ width: stage === "ephemeris" ? "40%" : `${Math.round(progress * 100)}%` }} />
         </div>
-        <p className="cine-sub">Integrating the orbit with Sun, planets, Earth and Moon...</p>
+        <p className="cine-sub">
+          {stage === "ephemeris"
+            ? "Fetching the planet and Moon tables (about 15 MB, cached after the first time)..."
+            : "Integrating the orbit with Sun, planets, Earth and Moon..."}
+        </p>
       </div>
     );
   if (phase === "error")

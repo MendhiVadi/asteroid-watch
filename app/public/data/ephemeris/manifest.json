@@ -19,7 +19,7 @@
   "layout": "[body][step][x,y,z,vx,vy,vz]",
   "jd0": 2458849.5,
   "stepDays": 1.0,
-  "count": 6210,
+  "count": 29585,
   "bodies": [
    "sun",
    "mercury",
@@ -38,8 +38,8 @@
   "layout": "[step][x,y,z,vx,vy,vz]",
   "relativeTo": "earth",
   "jd0": 2458849.5,
-  "stepDays": 0.08333333333333333,
-  "count": 74509
+  "stepDays": 0.5,
+  "count": 59169
  },
  "gm": {
   "sun": {
@@ -90,7 +90,53 @@
  },
  "notes": [
   "mars/jupiter/saturn/uranus/neptune are system barycentres; their GM includes satellites.",
-  "earth and moon are separate bodies; moon.bin is stored relative to earth (Float64; Float32 gave interpolation jerk that limits step size near the Moon).",
+  "earth and moon are separate bodies; moon.bin is stored relative to earth, Float64, 12-hour nodes (cubic Hermite on position+velocity; step chosen as the coarsest divisor of 1 day with Moon position error < 1 km, see 'validation'; Float32 gave interpolation jerk that limits step size near the Moon).",
   "No minor-planet perturbers (Ceres, Vesta, Pallas ...) and no Pluto are included."
- ]
+ ],
+ "extension": {
+  "extendedUtc": "2026-10-09T05:58:22Z",
+  "baseEndJd": 2465058.5,
+  "seamIndex": 6209,
+  "note": "rows after seamIndex fetched in a second pass; first fetched row verified equal to the last existing row"
+ },
+ "jdStart": 2458849.5,
+ "jdEnd": 2488433.5,
+ "validation": {
+  "method": "cubic Hermite on stored nodes (position+velocity) vs fresh Horizons samples; error = |dr| in km",
+  "planets": {
+   "earth": {
+    "nodeStepDays": 1.0,
+    "worstKm": 0.0978,
+    "perWindowKm": {
+     "start": 0.0823,
+     "seam": 0.0887,
+     "mid": 0.0953,
+     "end": 0.0978
+    }
+   },
+   "mercury": {
+    "nodeStepDays": 1.0,
+    "worstKm": 20.0492,
+    "perWindowKm": {
+     "start": 20.0492,
+     "seam": 20.0318,
+     "mid": 20.0222,
+     "end": 20.0264
+    }
+   }
+  },
+  "moon": {
+   "nodeStepDays": 0.5,
+   "worstKm": 0.316,
+   "rmsKm": 0.1218,
+   "perWindowKm": {
+    "start": 0.2746,
+    "seam": 0.2856,
+    "mid": 0.2561,
+    "late": 0.2791,
+    "end": 0.316
+   },
+   "samples": 3600
+  }
+ }
 }

@@ -274,3 +274,13 @@ input:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   .cine-note { display: none; }
   .cine-views { margin-left: 0; }
 }
+
+.card-approaches { margin-top: 0.8rem; }
+.card-approaches ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.25rem; }
+.card-approaches li { display: flex; align-items: baseline; gap: 0.7rem; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.card-approaches li span { color: var(--soft); min-width: 5.6rem; }
+.card-approaches li small { color: var(--muted); margin-left: auto; }
+@media (max-width: 820px) { .card-approaches { margin-top: 0.5rem; } }
+
+.cine-bar--busy i { animation: busy 1.2s ease-in-out infinite alternate; }
+@keyframes busy { from { margin-left: 0; } to { margin-left: 60%; } }

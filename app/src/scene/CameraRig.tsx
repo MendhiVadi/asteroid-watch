@@ -5,6 +5,7 @@ import gsap from "gsap";
 import { Vector3 } from "three";
 import { clock, live, SPEEDS, useStore } from "../lib/store";
 import { cine } from "../lib/cinematic/state";
+import { clampClock } from "../lib/coverage";
 
 const HOME = new Vector3(0, 4.5, 16);
 const WIDE = new Vector3(0, 34, 62);
@@ -16,8 +17,8 @@ function ClockDriver() {
   useFrame((_, delta) => {
     if (cine.active) return;
     const speed = SPEEDS[useStore.getState().speedIdx];
-    // Stay inside the ephemeris coverage (2020-01-01 .. 2036-12-31) so cinematic mode can always start.
-    if (speed !== 0) clock.jd = Math.min(2465058, Math.max(2458850, clock.jd + speed * Math.min(delta, 0.1)));
+    // Stay inside [today .. end of ephemeris coverage] so cinematic mode can always start.
+    if (speed !== 0) clock.jd = clampClock(clock.jd + speed * Math.min(delta, 0.1));
   });
   return null;
 }

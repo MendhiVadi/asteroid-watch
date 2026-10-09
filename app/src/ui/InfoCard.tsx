@@ -79,6 +79,20 @@ export function InfoCard() {
           <dd>{designation(a.name)}</dd>
         </div>
       </dl>
+      {a.next_close_approach && (
+        <div className="card-approaches">
+          <span className="field-label">Upcoming close approaches</span>
+          <ul>
+            {a.next_close_approach.map((c) => (
+              <li key={c.date}>
+                <span>{c.date.slice(0, 10)}</span>
+                <strong>{fmtDistance(c.dist_au)}</strong>
+                <small>{fmtKm(c.dist_au)}</small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="card-actions">
         <button type="button" className="chip chip--accent" onClick={() => void startCinema(selected)}>
           Cinematic &#9654;

@@ -12,7 +12,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const lib = (f: string) => pathToFileURL(path.join(root, 'app/src/lib/nbody', f)).href;
 
-const { Ephemeris, IDX_EARTH, IDX_MOON, IDX_SUN } = await import(lib('ephemeris.ts'));
+const { Ephemeris, IDX_EARTH, IDX_MOON, IDX_SUN, BODY_ORDER, N_BODIES } = await import(lib('ephemeris.ts'));
 const { IAS15, StepPoly } = await import(lib('ias15.ts'));
 const { makeForce } = await import(lib('dynamics.ts'));
 const { elementsToState, stateToElements, propagateElementsTwoBody } = await import(lib('elements.ts'));
@@ -415,6 +415,167 @@ const HZ_MIN_JD = 2462240.406944444;
     const r = simulate(old, 2461322.5, { ephemeris: eph, jdEnd: 2461400.5, escape: { enabled: false } });
     const dd = Math.hypot(r.startState.x[0] - HZ[0][1], r.startState.x[1] - HZ[0][2], r.startState.x[2] - HZ[0][3]);
     check('element epoch before coverage (1987): two-body pre-propagation runs', r.twoBodyDays > 10000 && dd < 0.05, `twoBodyDays ${r.twoBodyDays.toFixed(0)}, start-state offset from Horizons ${dd.toFixed(5)} AU (sun-only drift)`);
+  }
+}
+
+// ------------------------------------------------------------------------------------------
+// 4b. Extended coverage 2020-01-01 .. 2100-12-31: lookups in 2029 and 2095, the 2036/2037 seam, the last
+//     day, and range errors at both ends.
+// ------------------------------------------------------------------------------------------
+{
+  // Independent JPL Horizons vectors at epochs BETWEEN table nodes (barycentric, ecliptic J2000, AU and AU/day;
+  // moonRel is geocentric), fetched with horizons_vectors() from scripts/fetch_ephemeris.py.
+  const REF = [
+    // 2029-04-13 18:00 TDB (Apophis flyby day)
+    {
+      tag: '2029',
+      jd: 2462240.25,
+      sun: [0.001145488363936348, -0.0008552883404964813, 3.115325761124493e-05, -1.259173462994582e-06, 4.988712646574992e-06, 3.90014925368425e-09],
+      earth: [-0.9172783408226306, -0.403674141790749, 6.063776518834709e-05, 0.006631885622686458, -0.01582127297872252, 1.182973034883342e-06],
+      jupiter: [-5.043010050510045, -2.064019942629867, 0.121464110596568, 0.002768433443493603, -0.006633869454057104, -3.437328084284276e-05],
+      neptune: [29.54165838339578, 4.284041734368702, -0.7690408568364652, -0.0004710178978599656, 0.003125279307509938, -5.350562135038597e-05],
+      moonRel: [0.002510143933696842, 0.00101428915788273, 0.0002292893308936725, -0.0002124665649081209, 0.0005192026951418629, -1.277132162631147e-05],
+    },
+    // 2036-12-31 18:00 TDB (end of the original table = seam of the extension)
+    {
+      tag: 'seam 2036/2037',
+      jd: 2465058.75,
+      sun: [0.000412151369806379, -0.007683456469433188, 1.082290537922298e-05, 8.42155783371175e-06, -7.117632911680498e-09, -2.151509520749108e-07],
+      earth: [-0.1640486467486204, 0.9617831045983397, -6.823581991059252e-05, -0.01722629881462544, -0.002943305347483311, -3.026711092551175e-07],
+      jupiter: [0.687453510858268, 5.043885159109904, -0.0363552403397251, -0.00756498258562046, 0.001369725427186808, 0.0001635206751923058],
+      neptune: [26.93581398956325, 12.77503800461293, -0.8838464407090906, -0.001364951169115302, 0.002855192984916657, -2.73418432920911e-05],
+      moonRel: [0.0006535348355406739, 0.002390836753233106, -0.0001813591441759575, -0.0005972366098008301, 0.000130099481914453, 3.593094552579227e-05],
+    },
+    // 2095-07-04 06:00 TDB
+    {
+      tag: '2095',
+      jd: 2486427.75,
+      sun: [-5.973266312792907e-05, -0.006269490691810774, 1.391180764774364e-05, 7.116027349770342e-06, -3.103576834370313e-06, -1.846033399835872e-07],
+      earth: [0.1989613387791475, -1.003292223981129, 0.0002232316837303462, 0.01660529725688274, 0.00330242431054286, -1.625888090089229e-06],
+      jupiter: [2.782970674633181, 4.160413144222001, -0.07965382290716824, -0.006362492878198388, 0.004545143386101936, 0.0001230157721072935],
+      neptune: [-27.2028606931433, 13.01808441836146, 0.3588694535622779, -0.001372523110442353, -0.002811278422014665, 8.952922988275442e-05],
+      moonRel: [-0.001697329607085044, 0.001987028638656229, 0.0001902431450428128, -0.0004573617093394483, -0.0003564476273148808, 3.395310148667666e-05],
+    },
+    // 2100-12-30 18:00 TDB (last day of coverage)
+    {
+      tag: 'last day 2100-12-30',
+      jd: 2488433.25,
+      sun: [0.007243530431021522, 0.0038253730202079, -0.0002437805917179797, -4.865597165068992e-06, 6.823090584850088e-06, 7.42737744975605e-08],
+      earth: [-0.1242004603510599, 0.9784509566663336, -0.0004636321496618933, -0.01734153868826349, -0.002358017852440775, 6.07874291759428e-07],
+      jupiter: [-4.321786055926784, -3.276175326622243, 0.1102958092558852, 0.004461439041814476, -0.005666210811756518, -7.577207693529152e-05],
+      neptune: [-29.34784010861532, 7.139407593488341, 0.5293741991642005, -0.0007593465312969012, -0.003029933716324338, 7.990148902734419e-05],
+      moonRel: [0.000179091731122767, -0.002415622342042606, -0.0001753931230232998, 0.0006252763364614877, 2.768489377531903e-05, 3.108728504158345e-05],
+    },
+  ];
+  const IDX = { sun: IDX_SUN, earth: IDX_EARTH, jupiter: BODY_ORDER.indexOf('jupiter'), neptune: BODY_ORDER.indexOf('neptune') };
+  const st = new Float64Array(6);
+  const pos = new Float64Array(3 * N_BODIES);
+  const km = (a: ArrayLike<number>, b: ArrayLike<number>) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) * AU_KM;
+
+  check(
+    'coverage is 2020-01-01 .. 2100-12-31 (JD 2458849.5 .. 2488433.5)',
+    eph.jdStart === 2458849.5 && eph.jdEnd === 2488433.5,
+    `JD ${eph.jdStart} .. ${eph.jdEnd}, Moon grid ${(manifest.moon.stepDays * 24).toFixed(2)} h`,
+  );
+  for (const r of REF) {
+    const t = eph.toT(r.jd);
+    let worstP = 0;
+    let worstV = 0;
+    for (const name of ['sun', 'earth', 'jupiter', 'neptune'] as const) {
+      eph.state(IDX[name], t, st);
+      worstP = Math.max(worstP, km(st, r[name]));
+      worstV = Math.max(worstV, Math.hypot(st[3] - r[name][3], st[4] - r[name][4], st[5] - r[name][5]) * AUD_TO_KMS * 1e6); // mm/s
+    }
+    eph.moonRelState(t, st);
+    const moonKm = km(st, r.moonRel);
+    const moonV = Math.hypot(st[3] - r.moonRel[3], st[4] - r.moonRel[4], st[5] - r.moonRel[5]) * AUD_TO_KMS * 1e6; // mm/s
+    // positions() (used by the force model) must agree with state()
+    eph.positions(t, pos);
+    eph.state(IDX_MOON, t, st);
+    const consist = km([pos[3 * IDX_MOON], pos[3 * IDX_MOON + 1], pos[3 * IDX_MOON + 2]], st);
+    check(
+      `${r.tag}: ephemeris lookup matches Horizons (Sun/Earth/Jupiter/Neptune < 0.2 km and 20 mm/s, Moon < 1 km and 0.3 m/s, positions()==state())`,
+      worstP < 0.2 && worstV < 20 && moonKm < 1 && moonV < 300 && consist < 1e-6,
+      `planets worst ${(worstP * 1000).toFixed(1)} m / ${worstV.toFixed(2)} mm/s, Moon(geocentric) ${(moonKm * 1000).toFixed(1)} m / ${moonV.toFixed(1)} mm/s`,
+    );
+  }
+  // positions() at the very last node and first node must work (inclusive coverage)
+  {
+    let ok = true;
+    try {
+      eph.positions(eph.tEnd, pos);
+      eph.positions(eph.tStart, pos);
+    } catch {
+      ok = false;
+    }
+    check('first and last node of the table are both readable', ok);
+  }
+  // Ephemeris-level range errors
+  {
+    const thrown = (fn: () => void) => {
+      try {
+        fn();
+      } catch (e) {
+        return e instanceof RangeError;
+      }
+      return false;
+    };
+    check(
+      'ephemeris lookups outside coverage throw RangeError (both ends, state + positions)',
+      thrown(() => eph.positions(eph.tEnd + 0.01, pos)) &&
+        thrown(() => eph.state(IDX_EARTH, eph.tEnd + 1, st)) &&
+        thrown(() => eph.positions(eph.tStart - 0.01, pos)) &&
+        thrown(() => eph.state(IDX_MOON, eph.tStart - 1, st)),
+    );
+  }
+  // A short N-body run in 2095 and one that reaches the very end of the table
+  {
+    const jd95 = 2486427.75;
+    eph.state(IDX_EARTH, eph.toT(jd95), st);
+    const seed = {
+      jd: jd95,
+      x: [st[0] + 0.03, st[1], st[2]],
+      v: [st[3], st[4] + 0.0004, st[5]],
+    };
+    const r = simulate(seed, jd95, { ephemeris: eph, jdEnd: jd95 + 120, escape: { enabled: false } });
+    check(
+      '2095: N-body run (120 d) completes, reaches window end, finite samples',
+      r.status === 'window_end' && Math.abs(r.stopJd - (jd95 + 120)) < 1e-6 && r.nSamples > 10 && r.samples.every(Number.isFinite),
+      `${r.nSamples} samples, ${r.stats.steps} steps, min Earth dist ${r.minEarthDistAu.toFixed(5)} AU`,
+    );
+    const last = (r.nSamples - 1) * SAMPLE_STRIDE;
+    const rSun = Math.hypot(r.samples[last + S.HX], r.samples[last + S.HX + 1], r.samples[last + S.HX + 2]);
+    check('2095: particle seeded next to Earth is still on a ~1 AU heliocentric orbit after 120 d', rSun > 0.9 && rSun < 1.1, `heliocentric distance ${rSun.toFixed(4)} AU`);
+
+    const jdTail = eph.jdEnd - 25;
+    eph.state(IDX_EARTH, eph.toT(jdTail), st);
+    const seed2 = { jd: jdTail, x: [st[0] + 0.03, st[1], st[2]], v: [st[3], st[4] + 0.0004, st[5]] };
+    const r2 = simulate(seed2, jdTail, { ephemeris: eph, escape: { enabled: false } });
+    check('run started 25 d before the end of the table stops exactly at coverage end (no range error)', Math.abs(r2.stopJd - eph.jdEnd) < 1e-6 && r2.samples.every(Number.isFinite), `stop JD ${r2.stopJd}, ${r2.nSamples} samples`);
+  }
+  // Typed NBodyRangeError at both ends (state + element inputs)
+  {
+    const codeOf = (fn: () => void) => {
+      try {
+        fn();
+      } catch (e) {
+        return e instanceof NBodyRangeError ? e.code : `other:${String(e)}`;
+      }
+      return 'no-throw';
+    };
+    const seed = { jd: 2486427.75, x: [0.2, -1.0, 0], v: [0.0166, 0.0033, 0] };
+    check(
+      'start after coverage end (2101-01-01) -> NBodyRangeError(OUT_OF_COVERAGE)',
+      codeOf(() => simulate(seed, 2488434.5, { ephemeris: eph })) === 'OUT_OF_COVERAGE' &&
+        codeOf(() => simulate(APOPHIS, eph.jdEnd + 1, { ephemeris: eph })) === 'OUT_OF_COVERAGE',
+    );
+    check(
+      'start before coverage start (2019-12-31) -> NBodyRangeError(OUT_OF_COVERAGE)',
+      codeOf(() => simulate(seed, eph.jdStart - 1, { ephemeris: eph })) === 'OUT_OF_COVERAGE' &&
+        codeOf(() => simulate({ ...seed, jd: eph.jdEnd + 5 }, eph.jdEnd - 5, { ephemeris: eph })) === 'OUT_OF_COVERAGE',
+    );
+    const clamped = simulate(APOPHIS, eph.jdEnd + 3000, { ephemeris: eph, clampToCoverage: true });
+    check('clampToCoverage clamps a start far beyond 2100 to the last day', clamped.startJd === eph.jdEnd, `start ${clamped.startJd}`);
   }
 }
 
